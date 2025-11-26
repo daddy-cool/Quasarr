@@ -49,6 +49,11 @@ def handle_protected(shared_state, title, password, package_id, imdb_id, url,
                      mirror=None, size_mb=None, func=None, label=""):
     links = func(shared_state, url, mirror, title)
     if links:
+        if len(links) == 1 and "/404.html" in links[0]:
+            fail(title, package_id, shared_state,
+                 reason=f'IP was banned during download of "{title}" on {label} - "{url}"')
+            return {"success": False, "title": title}
+
         info(f'CAPTCHA-Solution required for "{title}" at: "{shared_state.values['external_address']}/captcha"')
         send_discord_message(shared_state, title=title, case="captcha", imdb_id=imdb_id, source=url)
         blob = json.dumps({"title": title, "links": links, "size_mb": size_mb, "password": password})
@@ -139,7 +144,7 @@ def handle_sl(shared_state, title, password, package_id, imdb_id, url, mirror, s
 
 def handle_wd(shared_state, title, password, package_id, imdb_id, url, mirror, size_mb):
     data = get_wd_download_links(shared_state, url, mirror, title)
-    links = data.get("links", [])
+    links = data.get("links", []) if data else []
     if not links:
         fail(title, package_id, shared_state,
              reason=f'Offline / no links found for "{title}" on WD - "{url}"')
