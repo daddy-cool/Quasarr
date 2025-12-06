@@ -105,28 +105,45 @@ def setup_captcha_routes(app):
         """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
         return f'''
             <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc;">
-                <h3>Bypass CAPTCHA</h3>
-                <a href="{url}" target="_blank">Protected Link</a>
-                <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="package_id" value="{package_id}" />
-                    <input type="hidden" name="title" value="{title}" />
-                    <input type="hidden" name="password" value="{password}" />
-
-                    <div style="margin-bottom: 15px;">
-                        <label for="links-input"><b>Paste direct download links (one per line):</b></label><br>
-                        <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
-                    </div>
-
-                    <div style="margin-bottom: 15px;">
-                        <label for="dlc-file"><b>Or upload DLC file:</b></label><br>
-                        <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
-                    </div>
-
-                    <div>
-                        {render_button("Submit Bypass", "primary", {"type": "submit"})}
-                    </div>
-                </form>
+                <details id="bypassDetails">
+                <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
+                    <strong><a href="{url}" target="_blank">Obtain download links here!</a></strong><br><br>
+                    <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                        <input type="hidden" name="package_id" value="{package_id}" />
+                        <input type="hidden" name="title" value="{title}" />
+                        <input type="hidden" name="password" value="{password}" />
+    
+                        <div>
+                            <strong>Paste the download links (one per line):</strong>
+                            <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                        </div>
+    
+                        <div>
+                            <strong>Or upload DLC file:</strong><br>
+                            <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
+                        </div>
+    
+                        <div>
+                            {render_button("Submit", "primary", {"type": "submit"})}
+                        </div>
+                    </form>
+                </details>
             </div>
+            <script>
+              // Handle bypass toggle
+              const bypassDetails = document.getElementById('bypassDetails');
+              const bypassSummary = document.getElementById('bypassSummary');
+    
+              if (bypassDetails && bypassSummary) {{
+                bypassDetails.addEventListener('toggle', () => {{
+                  if (bypassDetails.open) {{
+                    bypassSummary.textContent = 'Hide CAPTCHA Bypass';
+                  }} else {{
+                    bypassSummary.textContent = 'Show CAPTCHA Bypass';
+                  }}
+                }});
+              }}
+            </script>
         '''
 
     @app.get('/captcha/delete/<package_id>')
@@ -285,7 +302,6 @@ def setup_captcha_routes(app):
                 <div>
                     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
-                    <h3>Solve CAPTCHA</h3>
                     <div id="captcha-key"></div>
                     {link_select}<br><br>
                     <input type="hidden" id="link-hidden" value="{prioritized_links[0][0]}" />
@@ -408,8 +424,11 @@ def setup_captcha_routes(app):
             # Process links input
             if links_input:
                 info(f"Processing direct links bypass for {title}")
-                links = [link.strip() for link in links_input.split('\n') if link.strip()]
-                info(f"Received {len(links)} direct download links")
+                raw_links = [link.strip() for link in links_input.split('\n') if link.strip()]
+                links = [l for l in raw_links if l.lower().startswith(("http://", "https://"))]
+
+                info(f"Received {len(links)} valid direct download links "
+                     f"(from {len(raw_links)} provided)")
 
             # Process DLC file
             elif dlc_upload:
@@ -590,7 +609,6 @@ def setup_captcha_routes(app):
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Package:</b> {title}</p>
-            <h3>Solve CAPTCHA</h3>
             <form action="/captcha/decrypt-filecrypt-circle?url={url}&session_id={session_id}&package_id={package_id}" method="post">
               <input type="image" src="/captcha/circle.php?url={url}&session_id={session_id}" name="button" alt="Circle CAPTCHA">
             </form>
