@@ -13,6 +13,7 @@ from quasarr.search.sources.dt import dt_feed, dt_search
 from quasarr.search.sources.dw import dw_feed, dw_search
 from quasarr.search.sources.fx import fx_feed, fx_search
 from quasarr.search.sources.mb import mb_feed, mb_search
+from quasarr.search.sources.n4 import n4_feed, n4_search
 from quasarr.search.sources.nx import nx_feed, nx_search
 from quasarr.search.sources.sf import sf_feed, sf_search
 from quasarr.search.sources.sl import sl_feed, sl_search
