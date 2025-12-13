@@ -34,6 +34,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
     dw = shared_state.values["config"]("Hostnames").get("dw")
     fx = shared_state.values["config"]("Hostnames").get("fx")
     mb = shared_state.values["config"]("Hostnames").get("mb")
+    n4 = shared_state.values["config"]("Hostnames").get("n4")
     nx = shared_state.values["config"]("Hostnames").get("nx")
     sf = shared_state.values["config"]("Hostnames").get("sf")
     sl = shared_state.values["config"]("Hostnames").get("sl")
@@ -52,6 +53,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
         (dw, dw_search),
         (fx, fx_search),
         (mb, mb_search),
+        (n4, n4_search),
         (nx, nx_search),
         (sf, sf_search),
         (sl, sl_search),
@@ -76,6 +78,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
         (dw, dw_feed),
         (fx, fx_feed),
         (mb, mb_feed),
+        (n4, n4_feed),
         (nx, nx_feed),
         (sf, sf_feed),
         (sl, sl_feed),
