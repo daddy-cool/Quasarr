@@ -9,8 +9,8 @@ on:
         required: false
 
 env:
-  ENDPOINT: "rix1337/docker-quasarr"
-  GHCR_ENDPOINT: "ghcr.io/rix1337/quasarr"
+  ENDPOINT: "daddy-cool/docker-quasarr"
+  GHCR_ENDPOINT: "ghcr.io/daddy-cool/quasarr"
 
 jobs:
   version-check:
