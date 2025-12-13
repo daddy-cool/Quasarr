@@ -51,7 +51,7 @@ def n4_feed(shared_state, start_time, request_from, mirror=None):
         debug(f'Mirror "{mirror}" not supported by {hostname}.')
         return releases
 
-    url = f'https://{host}/'
+    url = f'https://{host}/rss.xml'
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     try:
@@ -135,13 +135,13 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
-    query = search_string
 
-    url = f'https://{host}/?s={query}'
+    url = f'https://{host}/search'
     headers = {"User-Agent": shared_state.values["user_agent"]}
+    data = {"search": search_string}
 
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.post(url, headers=headers, data=data, timeout=10)
         r.raise_for_status()
     except Exception as e:
         info(f"{hostname}: search load error: {e}")
