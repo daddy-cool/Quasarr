@@ -6,10 +6,13 @@ import re
 import time
 from base64 import urlsafe_b64encode
 from datetime import datetime
+from html import unescape
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 import requests
 
+from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
 hostname = "n4"
@@ -19,7 +22,7 @@ supported_mirrors = ["rapidgator", "ddownload"]
 def convert_to_rss_date(date_str: str) -> str:
     # Try to parse common formats like "13. Dezember 2025 / 12:34" or "13.12.2025 - 12:34"
     date_str = date_str.strip()
-    for fmt in ("%d. %B %Y / %H:%M", "%d.%m.%Y - %H:%M", "%Y-%m-%d %H:%M"):
+    for fmt in ("%d. %B %Y / %H:%M", "%d.%m.%Y / %H:%M", "%d.%m.%Y - %H:%M", "%Y-%m-%d %H:%M"):
         try:
             dt = datetime.strptime(date_str, fmt)
             return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
@@ -39,89 +42,6 @@ def extract_size(text: str) -> dict:
     return {"size": "0", "sizeunit": "MB"}
 
 
-def n4_feed(shared_state, start_time, request_from, mirror=None):
-    releases = []
-    host = shared_state.values["config"]("Hostnames").get(hostname)
-
-    if not "arr" in request_from.lower():
-        debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported by {hostname}.')
-        return releases
-
-    url = f'https://{host}/rss.xml'
-    headers = {"User-Agent": shared_state.values["user_agent"]}
-
-    try:
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-    except Exception as e:
-        info(f"{hostname}: could not fetch feed: {e}")
-        return releases
-
-    soup = BeautifulSoup(r.content, 'html.parser')
-
-    # assume feed items are in article tags or h2/h3 headings
-    items = soup.find_all(['article', 'h2', 'h3'])
-    for it in items:
-        try:
-            a = it.find('a', href=True)
-            if not a:
-                continue
-            title = a.get_text(strip=True)
-            source = a['href']
-
-            # size and date heuristics
-            size_text = ''
-            date_text = ''
-            maybe_span = it.find('span')
-            if maybe_span:
-                txt = maybe_span.get_text(" ", strip=True)
-                # look for sizes like "1.23 GB" or dates
-                if re.search(r"\d+\s*[GMK]B", txt, re.IGNORECASE):
-                    size_text = txt
-                else:
-                    date_text = txt
-
-            size_item = extract_size(size_text) if size_text else {"size": "0", "sizeunit": "MB"}
-            mb = shared_state.convert_to_mb(size_item)
-            size = mb * 1024 * 1024
-
-            published = convert_to_rss_date(date_text) if date_text else ""
-
-            imdb_id = None
-            try:
-                imdb_id = re.search(r'tt\d+', str(it)).group()
-            except Exception:
-                imdb_id = None
-
-            payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|".encode('utf-8')).decode('utf-8')
-            link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
-
-            releases.append({
-                "details": {
-                    "title": title,
-                    "hostname": hostname,
-                    "imdb_id": imdb_id,
-                    "link": link,
-                    "mirror": mirror,
-                    "size": size,
-                    "date": published,
-                    "source": source
-                },
-                "type": "protected"
-            })
-        except Exception as e:
-            debug(f"{hostname}: error parsing feed item: {e}")
-            continue
-
-    elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
-    return releases
-
-
 def n4_search(shared_state, start_time, request_from, search_string, mirror=None, season=None, episode=None):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -133,8 +53,19 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
     if mirror and mirror not in supported_mirrors:
         debug(f'Mirror "{mirror}" not supported by {hostname}.')
         return releases
+    
 
     imdb_id = shared_state.is_imdb_id(search_string)
+    if imdb_id:
+        title = get_localized_title(shared_state, imdb_id, 'de')
+        if not title:
+            info(f"{hostname}: no title for IMDb {imdb_id}")
+            return releases
+        search_string = title
+    else:
+        return releases
+
+    search_string = unescape(search_string)
 
     url = f'https://{host}/search'
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -142,56 +73,93 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
 
     try:
         r = requests.post(url, headers=headers, data=data, timeout=10)
-        r.raise_for_status()
+        soup = BeautifulSoup(r.content, 'html.parser')
+        results = soup.find_all('div', class_='article-right')
     except Exception as e:
         info(f"{hostname}: search load error: {e}")
         return releases
 
-    soup = BeautifulSoup(r.content, 'html.parser')
-    results = soup.find_all(['article', 'h2', 'h3'])
+
+    if not results:
+        return releases
 
     for result in results:
         try:
-            a = result.find('a', href=True)
+            a = result.find('a', class_='release-details', href=True)
             if not a:
                 continue
             title = a.get_text(strip=True)
+            subtitle = result.find('span', class_='subtitle')
+            if subtitle:
+                subtitle = subtitle.get_text(strip=True)
+            else:
+                subtitle = title
 
             if not shared_state.is_valid_release(title, request_from, search_string, season, episode):
                 continue
 
-            source = a['href']
+            source = urljoin(f'https://{host}', a['href'])
 
-            size_text = ''
-            maybe_span = result.find('span')
-            if maybe_span:
-                size_text = maybe_span.get_text(strip=True)
+            def get_release_field(res, label):
+                for li in res.select('ul.release-infos li'):
+                    sp = li.find('span')
+                    if not sp:
+                        continue
+                    if sp.get_text(strip=True).lower() == label.lower():
+                        txt = li.get_text(' ', strip=True)
+                        return txt[len(sp.get_text(strip=True)):].strip()
+                return ''
 
+            size_text = get_release_field(result, 'Größe') or get_release_field(result, 'Size')
             size_item = extract_size(size_text) if size_text else {"size": "0", "sizeunit": "MB"}
             mb = shared_state.convert_to_mb(size_item)
             size = mb * 1024 * 1024
 
+            password = ''
+            mirrors_p = result.find('p', class_='mirrors')
+            if mirrors_p:
+                strong = mirrors_p.find('strong')
+                if strong and strong.get_text(strip=True).lower().startswith('passwort'):
+                    nxt = strong.next_sibling
+                    if nxt:
+                        val = str(nxt).strip()
+                        if val:
+                            password = val.split()[0]
+
             date_text = ''
-            try:
-                date_text = result.parent.find('span', class_='date updated').get_text(strip=True)
-            except Exception:
-                date_text = ''
+            p_meta = result.find('p', class_='meta')
+            if p_meta:
+                spans = p_meta.find_all('span')
+                if len(spans) >= 2:
+                    date_part = spans[0].get_text(strip=True)
+                    time_part = spans[1].get_text(strip=True).replace('Uhr', '').strip()
+                    date_text = f"{date_part} / {time_part}"
 
             published = convert_to_rss_date(date_text) if date_text else ""
 
-            try:
-                imdb = re.search(r'tt\d+', str(result)).group()
-            except Exception:
-                imdb = imdb_id
+            imdb_a = result.select_one('a.imdb')
+            if imdb_a and imdb_a.get('href'):
+                try:
+                    imdb_test = re.search(r'tt\d+', imdb_a['href']).group()
+                    if imdb_test != imdb_id:
+                        debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {imdb_test}")
+                        continue
+                except Exception:
+                    debug(f"{hostname}: could not extract IMDb ID from link")
+                    continue
 
-            payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|".encode('utf-8')).decode('utf-8')
+            payload = urlsafe_b64encode(f"{subtitle}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
+            local_title = get_localized_title(shared_state, imdb_id, 'en')
+            if local_title:
+                subtitle = title + " [" + subtitle + "]"
+            
             releases.append({
                 "details": {
-                    "title": title,
+                    "title": subtitle,
                     "hostname": hostname,
-                    "imdb_id": imdb,
+                    "imdb_id": imdb_id,
                     "link": link,
                     "mirror": mirror,
                     "size": size,
