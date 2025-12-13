@@ -2,7 +2,7 @@ FROM alpine:latest
 MAINTAINER rix1337
 
 # Define package name
-ARG PACKAGE_NAME=quasarr
+ARG PACKAGE_NAME=quasarr-alt
 
 RUN apk add --no-cache curl \
     build-base \
@@ -35,4 +35,4 @@ ENV EXTERNAL_ADDRESS=""
 ENV DISCORD=""
 ENV HOSTNAMES=""
 
-ENTRYPOINT ["sh", "-c", "quasarr --port=8080 --internal_address=$INTERNAL_ADDRESS --external_address=$EXTERNAL_ADDRESS --discord=$DISCORD --hostnames=$HOSTNAMES"]
+ENTRYPOINT ["sh", "-c", "quasarr-alt --port=8080 --internal_address=$INTERNAL_ADDRESS --external_address=$EXTERNAL_ADDRESS --discord=$DISCORD --hostnames=$HOSTNAMES"]
