@@ -18,14 +18,14 @@ with open('requirements.txt') as f:
     required = f.read().splitlines()
 
 setuptools.setup(
-    name="quasarr",
+    name="quasarr-alt",
     version=get_version(),
-    author="rix1337",
+    author="daddy-cool",
     author_email="",
     description="Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/rix1337/Quasarr",
+    url="https://github.com/daddy-cool/Quasarr",
     packages=setuptools.find_packages(),
     include_package_data=True,
     install_requires=required,
