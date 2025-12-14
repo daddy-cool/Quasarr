@@ -8,7 +8,7 @@ import requests
 
 
 def get_version():
-    return "1.17.3"
+    return "1.18.4"
 
 
 def get_latest_version():
@@ -17,7 +17,7 @@ def get_latest_version():
     Returns the tag name string (e.g. "1.5.0" or "1.4.2a1").
     Raises RuntimeError on HTTP errors.
     """
-    api_url = "https://api.github.com/repos/rix1337/Quasarr/releases/latest"
+    api_url = "https://api.github.com/repos/daddy-cool/Quasarr/releases/latest"
     resp = requests.get(api_url, headers={"Accept": "application/vnd.github.v3+json"})
     if resp.status_code != 200:
         raise RuntimeError(f"GitHub API error: {resp.status_code} {resp.text}")
