@@ -13,6 +13,7 @@ from quasarr.downloads.sources.by import get_by_download_links
 from quasarr.downloads.sources.dd import get_dd_download_links
 from quasarr.downloads.sources.dt import get_dt_download_links
 from quasarr.downloads.sources.dw import get_dw_download_links
+from quasarr.downloads.sources.he import get_he_download_links
 from quasarr.downloads.sources.mb import get_mb_download_links
 from quasarr.downloads.sources.nk import get_nk_download_links
 from quasarr.downloads.sources.nx import get_nx_download_links
@@ -202,6 +203,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         'DD': config.get("dd"),
         'DT': config.get("dt"),
         'DW': config.get("dw"),
+        'HE': config.get("he"),
         'MB': config.get("mb"),
         'NK': config.get("nk"),
         'NX': config.get("nx"),
@@ -216,6 +218,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         (flags['DD'], lambda *a: handle_unprotected(*a, func=get_dd_download_links, label='DD')),
         (flags['DT'], lambda *a: handle_unprotected(*a, func=get_dt_download_links, label='DT')),
         (flags['DW'], lambda *a: handle_protected(*a, func=get_dw_download_links, label='DW')),
+        (flags['HE'], lambda *a: handle_protected(*a, func=get_he_download_links, label='HE')),
         (flags['MB'], lambda *a: handle_protected(*a, func=get_mb_download_links, label='MB')),
         (flags['NK'], lambda *a: handle_protected(*a, func=get_nk_download_links, label='NK')),
         (flags['NX'], lambda *a: handle_unprotected(*a, func=get_nx_download_links, label='NX')),
