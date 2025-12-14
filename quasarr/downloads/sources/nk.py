@@ -10,9 +10,11 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 from urllib.parse import urlparse, urljoin
 
+hostname = "nk"
 
-def get_n4_download_links(shared_state, url, mirror, title):
-    n4 = shared_state.values["config"]("Hostnames").get("n4")
+
+def get_nk_download_links(shared_state, url, mirror, title):
+    host = shared_state.values["config"]("Hostnames").get(hostname)
     headers = {
         'User-Agent': shared_state.values["user_agent"],
     }
@@ -23,7 +25,7 @@ def get_n4_download_links(shared_state, url, mirror, title):
         resp = session.get(url, headers=headers, timeout=20)
         soup = BeautifulSoup(resp.text, 'html.parser')
     except Exception as e:
-        info(f"N4: could not fetch release page for {title}: {e}")
+        info(f"{hostname}: could not fetch release page for {title}: {e}")
         return False
 
     # download links are provided as anchors with class 'dl-button'
@@ -34,12 +36,12 @@ def get_n4_download_links(shared_state, url, mirror, title):
         href = a.get('href', '').strip()
         hoster = href.split('/')[3].lower()
         if not href.lower().startswith(('http://', 'https://')):
-            href  = 'https://' + n4 + href
+            href  = 'https://' + host + href
 
         try:
             href = requests.head(href, headers=headers, allow_redirects=True, timeout=20).url
         except Exception as e:
-            info(f"N4: could not resolve download link for {title}: {e}")
+            info(f"{hostname}: could not resolve download link for {title}: {e}")
             continue
 
         if hoster == 'ddl.to':
@@ -48,6 +50,6 @@ def get_n4_download_links(shared_state, url, mirror, title):
         candidates.append([href, hoster])
 
     if not candidates:
-        info(f"No external download links found on N4 page for {title}")
+        info(f"No external download links found on {hostname} page for {title}")
 
     return candidates
