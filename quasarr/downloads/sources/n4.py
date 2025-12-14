@@ -20,7 +20,7 @@ def get_n4_download_links(shared_state, url, mirror, title):
     session = requests.Session()
 
     try:
-        resp = session.get(url, headers=headers, timeout=10)
+        resp = session.get(url, headers=headers, timeout=20)
         soup = BeautifulSoup(resp.text, 'html.parser')
     except Exception as e:
         info(f"N4: could not fetch release page for {title}: {e}")
@@ -37,7 +37,7 @@ def get_n4_download_links(shared_state, url, mirror, title):
             href  = 'https://' + n4 + href
 
         try:
-            href = requests.head(href, headers=headers, allow_redirects=True, timeout=10).url
+            href = requests.head(href, headers=headers, allow_redirects=True, timeout=20).url
         except Exception as e:
             info(f"N4: could not resolve download link for {title}: {e}")
             continue

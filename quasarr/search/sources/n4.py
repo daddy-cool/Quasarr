@@ -20,7 +20,6 @@ supported_mirrors = ["rapidgator", "ddownload"]
 
 
 def convert_to_rss_date(date_str: str) -> str:
-    # Try to parse common formats like "13. Dezember 2025 / 12:34" or "13.12.2025 - 12:34"
     date_str = date_str.strip()
     for fmt in ("%d. %B %Y / %H:%M", "%d.%m.%Y / %H:%M", "%d.%m.%Y - %H:%M", "%Y-%m-%d %H:%M"):
         try:
@@ -28,7 +27,6 @@ def convert_to_rss_date(date_str: str) -> str:
             return dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
         except Exception:
             continue
-    # fallback: return empty string
     return ""
 
 
@@ -38,7 +36,6 @@ def extract_size(text: str) -> dict:
         size = match.group(1).replace(',', '.')
         unit = match.group(2)
         return {"size": size, "sizeunit": unit}
-    # fallback
     return {"size": "0", "sizeunit": "MB"}
 
 
@@ -72,7 +69,7 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
     data = {"search": search_string}
 
     try:
-        r = requests.post(url, headers=headers, data=data, timeout=10)
+        r = requests.post(url, headers=headers, data=data, timeout=20)
         soup = BeautifulSoup(r.content, 'html.parser')
         results = soup.find_all('div', class_='article-right')
     except Exception as e:
@@ -85,18 +82,41 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
 
     for result in results:
         try:
+            imdb_a = result.select_one('a.imdb')
+            if imdb_a and imdb_a.get('href'):
+                try:
+                    imdb_test = re.search(r'tt\d+', imdb_a['href']).group()
+                    if imdb_test != imdb_id:
+                        debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {imdb_test}")
+                        continue
+                except Exception:
+                    debug(f"{hostname}: could not extract IMDb ID from link")
+                    continue
+
             a = result.find('a', class_='release-details', href=True)
             if not a:
                 continue
             title = a.get_text(strip=True)
-            subtitle = result.find('span', class_='subtitle')
-            if subtitle:
-                subtitle = subtitle.get_text(strip=True)
+            
+            sub_title = result.find('span', class_='subtitle')
+            if sub_title:
+                release_title = sub_title.get_text(strip=True)
             else:
-                subtitle = title
+                release_title = ""
 
-            if not shared_state.is_valid_release(title, request_from, search_string, season, episode):
-                continue
+            if shared_state.is_valid_release(release_title, request_from, search_string, season, episode):
+                title = release_title
+            else:
+                combined_title = f"{title} [{release_title}]".strip()
+                if shared_state.is_valid_release(combined_title, request_from, search_string, season, episode):
+                    title = combined_title
+                else:
+                    if not shared_state.is_valid_release(title, request_from, search_string, season, episode):
+                        imdb_title = get_localized_title(shared_state, imdb_id, 'en')
+                        if shared_state.is_valid_release(imdb_title, request_from, search_string, season, episode):
+                            title = imdb_title
+                        else:
+                            continue
 
             source = urljoin(f'https://{host}', a['href'])
 
@@ -137,27 +157,12 @@ def n4_search(shared_state, start_time, request_from, search_string, mirror=None
 
             published = convert_to_rss_date(date_text) if date_text else ""
 
-            imdb_a = result.select_one('a.imdb')
-            if imdb_a and imdb_a.get('href'):
-                try:
-                    imdb_test = re.search(r'tt\d+', imdb_a['href']).group()
-                    if imdb_test != imdb_id:
-                        debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {imdb_test}")
-                        continue
-                except Exception:
-                    debug(f"{hostname}: could not extract IMDb ID from link")
-                    continue
-
-            payload = urlsafe_b64encode(f"{subtitle}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode()
+            payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
-
-            local_title = get_localized_title(shared_state, imdb_id, 'en')
-            if local_title:
-                subtitle = title + " [" + subtitle + "]"
             
             releases.append({
                 "details": {
-                    "title": subtitle,
+                    "title": title,
                     "hostname": hostname,
                     "imdb_id": imdb_id,
                     "link": link,
