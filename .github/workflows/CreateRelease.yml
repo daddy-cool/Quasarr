@@ -133,4 +133,4 @@ jobs:
           python -m twine upload ./artifact-wheel-amd64/* ./artifact-wheel-arm64/*.whl -u __token__ -p ${{ secrets.PYPI_TOKEN }}
       - name: Trigger Docker Image build
         run: |
-          curl -XPOST -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" -H "Content-Type: application/json" https://api.github.com/repos/rix1337/Quasarr/actions/workflows/BuildImage.yml/dispatches --data '{"ref": "main", "inputs": {"version": "${{ steps.version.outputs.version }}"}}'
+          curl -XPOST -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github.v3+json" -H "Content-Type: application/json" https://api.github.com/repos/daddy-cool/Quasarr/actions/workflows/BuildImage.yml/dispatches --data '{"ref": "main", "inputs": {"version": "${{ steps.version.outputs.version }}"}}'

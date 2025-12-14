@@ -2,7 +2,7 @@ FROM alpine:latest
 MAINTAINER rix1337
 
 # Define package name
-ARG PACKAGE_NAME=quasarr
+ARG PACKAGE_NAME=quasarr-alt
 
 RUN apk add --no-cache curl \
     build-base \
