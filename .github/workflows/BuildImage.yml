@@ -9,7 +9,7 @@ on:
         required: false
 
 env:
-  ENDPOINT: "daddy-cool/docker-quasarr"
+  ENDPOINT: "daddycool/docker-quasarr"
   GHCR_ENDPOINT: "ghcr.io/daddy-cool/quasarr"
 
 jobs:
