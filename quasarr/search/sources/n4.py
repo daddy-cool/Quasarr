@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Quasarr
-# Source for n4 (renamed from nima4k)
+# Project by https://github.com/rix1337
 
 import re
 import time
