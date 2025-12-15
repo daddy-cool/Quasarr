@@ -12,6 +12,7 @@ from quasarr.search.sources.dd import dd_search, dd_feed
 from quasarr.search.sources.dt import dt_feed, dt_search
 from quasarr.search.sources.dw import dw_feed, dw_search
 from quasarr.search.sources.fx import fx_feed, fx_search
+from quasarr.search.sources.he import he_feed, he_search
 from quasarr.search.sources.mb import mb_feed, mb_search
 from quasarr.search.sources.nk import nk_feed, nk_search
 from quasarr.search.sources.nx import nx_feed, nx_search
@@ -34,6 +35,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
     dt = shared_state.values["config"]("Hostnames").get("dt")
     dw = shared_state.values["config"]("Hostnames").get("dw")
     fx = shared_state.values["config"]("Hostnames").get("fx")
+    he = shared_state.values["config"]("Hostnames").get("he")
     mb = shared_state.values["config"]("Hostnames").get("mb")
     nk = shared_state.values["config"]("Hostnames").get("nk")
     nx = shared_state.values["config"]("Hostnames").get("nx")
@@ -53,6 +55,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
         (dt, dt_search),
         (dw, dw_search),
         (fx, fx_search),
+        (he, he_search),
         (mb, mb_search),
         (nk, nk_search),
         (nx, nx_search),
@@ -78,6 +81,7 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
         (dt, dt_feed),
         (dw, dw_feed),
         (fx, fx_feed),
+        (he, he_feed),
         (mb, mb_feed),
         (nk, nk_feed),
         (nx, nx_feed),

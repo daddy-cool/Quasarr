@@ -2,13 +2,10 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import re
-
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.providers.log import info, debug
-from urllib.parse import urlparse, urljoin
+from quasarr.providers.log import info
 
 hostname = "nk"
 
@@ -28,15 +25,14 @@ def get_nk_download_links(shared_state, url, mirror, title):
         info(f"{hostname}: could not fetch release page for {title}: {e}")
         return False
 
-    # download links are provided as anchors with class 'dl-button'
     anchors = soup.select('a.btn-orange')
     candidates = []
     for a in anchors:
-        
+
         href = a.get('href', '').strip()
         hoster = href.split('/')[3].lower()
         if not href.lower().startswith(('http://', 'https://')):
-            href  = 'https://' + host + href
+            href = 'https://' + host + href
 
         try:
             href = requests.head(href, headers=headers, allow_redirects=True, timeout=20).url
