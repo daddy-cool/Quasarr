@@ -22,7 +22,7 @@ def get_he_download_links(shared_state, url, mirror, title):
     session = requests.Session()
 
     try:
-        resp = session.get(url, headers=headers, timeout=20)
+        resp = session.get(url, headers=headers, timeout=30)
         soup = BeautifulSoup(resp.text, 'html.parser')
     except Exception as e:
         info(f"{hostname}: could not fetch release for {title}: {e}")
@@ -73,7 +73,7 @@ def get_he_download_links(shared_state, url, mirror, title):
         post_headers = headers.copy()
         post_headers.update({'Referer': resp.url})
         try:
-            resp = session.post(action_url, data=payload, headers=post_headers, timeout=20)
+            resp = session.post(action_url, data=payload, headers=post_headers, timeout=30)
             soup = BeautifulSoup(resp.text, 'html.parser')
         except Exception as e:
             info(f"{hostname}: could not submit protector form for {title}: {e}")

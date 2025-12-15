@@ -80,7 +80,14 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     if search_string != "":
         imdb_id = shared_state.is_imdb_id(search_string)
         if imdb_id:
-            source_search = imdb_id
+            local_title = get_localized_title(shared_state, imdb_id, 'en')
+            if not local_title:
+                info(f"{hostname}: no title for IMDb {imdb_id}")
+                return releases
+            source_search = local_title
+        else:
+            return releases
+        source_search = unescape(source_search)
     else:
         imdb_id = None
 
@@ -90,7 +97,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     params = {"s": source_search}
 
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=30)
+        r = requests.get(url, headers=headers, params=params, timeout=10)
         soup = BeautifulSoup(r.content, 'html.parser')
         results = soup.find_all('div', class_='item')
     except Exception as e:
@@ -149,28 +156,29 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             if published is None:
                 continue
                         
-            password = None
 
             release_imdb_id = None
-            if imdb_id:
-                release_imdb_id = imdb_id
-            else:
-                try:
-                    r = requests.get(source, headers=headers, timeout=30)
-                    soup = BeautifulSoup(r.content, 'html.parser')
-                    imdb_link = soup.find('a', href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE))
-                    if imdb_link:
-                        href = imdb_link['href'].strip()
-                        m = re.search(r"(tt\d{4,7})", href)
-                        if m:
-                            release_imdb_id = m.group(1)
-                        else:
-                            debug(f"{hostname}: imdb_id not found for title {title} in link href.")
+            try:
+                r = requests.get(source, headers=headers, timeout=10)
+                soup = BeautifulSoup(r.content, 'html.parser')
+                imdb_link = soup.find('a', href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE))
+                if imdb_link:
+                    href = imdb_link['href'].strip()
+                    m = re.search(r"(tt\d{4,7})", href)
+                    if m:
+                        release_imdb_id = m.group(1)
+                        if imdb_id:
+                            if release_imdb_id != imdb_id:
+                                debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}")
+                                continue
                     else:
-                        debug(f"{hostname}: imdb_id link href not found for title {title}.")
-                except Exception as e:
-                    debug(f"{hostname}: imdb_id load error: {e}")
+                        debug(f"{hostname}: imdb_id not found for title {title} in link href.")
+                else:
+                    debug(f"{hostname}: imdb_id link href not found for title {title}.")
+            except Exception as e:
+                debug(f"{hostname}: imdb_id load error: {e}")
 
+            password = None
             payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             
