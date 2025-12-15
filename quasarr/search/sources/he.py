@@ -67,7 +67,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
 
-    if "Radarr" in request_from:
+    if "radarr" in request_from.lower():
         tag = "movies"
     else:
         tag = "tv-shows"
@@ -76,7 +76,6 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         debug(f'Mirror "{mirror}" not supported by {hostname}.')
         return releases
 
-    timeout=10
     source_search = ""
     if search_string != "":
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -90,7 +89,6 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             return releases
         source_search = unescape(source_search)
     else:
-        timeout=30 #increased timeout for feed
         imdb_id = None
 
     url = f'https://{host}/tag/{tag}/'
@@ -99,7 +97,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     params = {"s": source_search}
 
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=timeout)
+        r = requests.get(url, headers=headers, params=params, timeout=10)
         soup = BeautifulSoup(r.content, 'html.parser')
         results = soup.find_all('div', class_='item')
     except Exception as e:
