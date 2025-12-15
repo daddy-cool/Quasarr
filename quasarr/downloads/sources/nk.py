@@ -28,7 +28,6 @@ def get_nk_download_links(shared_state, url, mirror, title):
         info(f"{hostname}: could not fetch release page for {title}: {e}")
         return False
 
-    # download links are provided as anchors with class 'dl-button'
     anchors = soup.select('a.btn-orange')
     candidates = []
     for a in anchors:
