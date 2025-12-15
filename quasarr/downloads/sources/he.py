@@ -82,7 +82,6 @@ def get_he_download_links(shared_state, url, mirror, title):
         if unlocked:
             for u in unlocked:
                 anchors.extend(u.find_all('a', href=True))
-
         if anchors:
             break
 
