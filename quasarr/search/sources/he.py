@@ -76,6 +76,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         debug(f'Mirror "{mirror}" not supported by {hostname}.')
         return releases
 
+    timeout=10
     source_search = ""
     if search_string != "":
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -89,6 +90,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             return releases
         source_search = unescape(source_search)
     else:
+        timeout=30 #increased timeout for feed
         imdb_id = None
 
     url = f'https://{host}/tag/{tag}/'
@@ -97,13 +99,12 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     params = {"s": source_search}
 
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r = requests.get(url, headers=headers, params=params, timeout=timeout)
         soup = BeautifulSoup(r.content, 'html.parser')
         results = soup.find_all('div', class_='item')
     except Exception as e:
         info(f"{hostname}: search load error: {e}")
         return releases
-
 
     if not results:
         return releases
@@ -154,8 +155,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
                     published = parse_posted_ago(posted_span)
                         
             if published is None:
-                continue
-                        
+                continue 
 
             release_imdb_id = None
             try:
@@ -163,20 +163,15 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
                 soup = BeautifulSoup(r.content, 'html.parser')
                 imdb_link = soup.find('a', href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE))
                 if imdb_link:
-                    href = imdb_link['href'].strip()
-                    m = re.search(r"(tt\d{4,7})", href)
-                    if m:
-                        release_imdb_id = m.group(1)
-                        if imdb_id:
-                            if release_imdb_id != imdb_id:
-                                debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}")
-                                continue
-                    else:
-                        debug(f"{hostname}: imdb_id not found for title {title} in link href.")
+                    release_imdb_id = re.search(r'tt\d+', imdb_link['href']).group()
+                    if imdb_id and release_imdb_id != imdb_id:
+                        debug(f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}")
+                        continue
                 else:
-                    debug(f"{hostname}: imdb_id link href not found for title {title}.")
+                    debug(f"{hostname}: imdb link not found for title {title}")
             except Exception as e:
-                debug(f"{hostname}: imdb_id load error: {e}")
+                debug(f"{hostname}: failed to determine imdb_id for title {title}")
+                continue
 
             password = None
             payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
