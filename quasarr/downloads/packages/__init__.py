@@ -19,7 +19,7 @@ def get_links_comment(package, package_links):
     return None
 
 
-def get_links_status(package, all_links):
+def get_links_status(package, all_links, is_archive=False):
     links_in_package = []
     package_uuid = package.get("uuid")
     if package_uuid and all_links:
@@ -64,6 +64,10 @@ def get_links_status(package, all_links):
             elif link_extraction_status == 'running' and link_eta > 0:
                 if eta and link_eta > eta or not eta:
                     eta = link_eta
+            all_finished = False
+        elif is_archive and link.get('status', '').lower() != 'extraction ok':
+            info("is_archive is True for package %s" % package_uuid)
+            info(link)
             all_finished = False
 
     return {"all_finished": all_finished, "eta": eta, "error": error, "offline_mirror_linkids": offline_mirror_linkids}
@@ -188,7 +192,14 @@ def get_packages(shared_state):
     if downloader_packages and downloader_links:
         for package in downloader_packages:
             comment = get_links_comment(package, downloader_links)
-            link_details = get_links_status(package, downloader_links)
+
+            archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
+            if archive_info and archive_info[0]:
+                is_archive = True
+            else:
+                is_archive = False
+
+            link_details = get_links_status(package, downloader_links, is_archive)
 
             error = link_details["error"]
             finished = link_details["all_finished"]

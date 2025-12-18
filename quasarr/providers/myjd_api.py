@@ -400,6 +400,28 @@ class Downloads:
         return resp
 
 
+class Extraction:
+    """
+    Class that represents the extraction details of a Device
+    """
+
+    def __init__(self, device):
+        self.device = device
+        self.url = "/extraction"
+
+    def get_archive_info(self, link_ids=[], package_ids=[]):
+        """
+        Get ArchiveStatus.
+
+        :param package_ids: Package UUID's.
+        :type: list of strings.
+        :param link_ids: Link UUID's.
+        """
+        params = [link_ids, package_ids]
+        resp = self.device.action(self.url + "/getArchiveInfo", params)
+        return resp
+
+
 class Jddevice:
     """
     Class that represents a JDownloader device and it's functions
@@ -418,6 +440,7 @@ class Jddevice:
         self.config = Config(self)
         self.linkgrabber = Linkgrabber(self)
         self.downloads = Downloads(self)
+        self.extraction = Extraction(self)
         self.downloadcontroller = DownloadController(self)
         self.update = Update(self)
         self.__direct_connection_info = None
