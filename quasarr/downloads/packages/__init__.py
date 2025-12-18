@@ -191,12 +191,11 @@ def get_packages(shared_state):
         for package in downloader_packages:
             comment = get_links_comment(package, downloader_links)
 
-            archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
-            if archive_info and archive_info[0]:
-                is_archive = True
-            else:
-                is_archive = False
-
+            try:
+                archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
+                is_archive = True if archive_info and archive_info[0] else False
+            except:
+                is_archive = True # in case of error assume archive to avoid false finished state
             link_details = get_links_status(package, downloader_links, is_archive)
 
             error = link_details["error"]

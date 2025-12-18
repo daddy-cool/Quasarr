@@ -411,11 +411,12 @@ class Extraction:
 
     def get_archive_info(self, link_ids=[], package_ids=[]):
         """
-        Get ArchiveStatus.
+        Get ArchiveStatus for links and/or packages.
 
         :param package_ids: Package UUID's.
         :type: list of strings.
-        :param link_ids: Link UUID's.
+        :param link_ids: link UUID's.
+        :type: list of strings
         """
         params = [link_ids, package_ids]
         resp = self.device.action(self.url + "/getArchiveInfo", params)
