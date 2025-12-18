@@ -61,7 +61,6 @@ def he_feed(*args, **kwargs):
 def he_search(shared_state, start_time, request_from, search_string="", mirror=None, season=None, episode=None):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
-    
     if not "arr" in request_from.lower():
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
@@ -91,7 +90,6 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         imdb_id = None
 
     url = f'https://{host}/tag/{tag}/'
-    
     headers = {"User-Agent": shared_state.values["user_agent"]}
     params = {"s": source_search}
 
