@@ -66,8 +66,6 @@ def get_links_status(package, all_links, is_archive=False):
                     eta = link_eta
             all_finished = False
         elif is_archive and link.get('status', '').lower() != 'extraction ok':
-            info("is_archive is True for package %s" % package_uuid)
-            info(link)
             all_finished = False
 
     return {"all_finished": all_finished, "eta": eta, "error": error, "offline_mirror_linkids": offline_mirror_linkids}
