@@ -91,6 +91,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         imdb_id = None
 
     url = f'https://{host}/tag/{tag}/'
+    
     headers = {"User-Agent": shared_state.values["user_agent"]}
     params = {"s": source_search}
 
@@ -124,19 +125,6 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             head_title = a.get_text(strip=True)
             if not head_title:
                 continue
-            
-            a = headline.find('a', href=True)
-            if not a:
-                continue
-
-            source = a['href'].strip()
-            
-            head_title = a.get_text(strip=True)
-            if not head_title:
-                continue
-
-            head_split = head_title.split(" – ")
-            title = head_split[0].strip()
 
             head_split = head_title.split(" – ")
             title = head_split[0].strip()
