@@ -257,8 +257,15 @@ def get_packages(shared_state):
                 if mb_left < 0:
                     mb_left = 0
 
+                # Check if package is actually finished (should be in history, not queue)
+                # This handles the case where finished packages haven't been moved to history yet
                 if eta is None:
-                    status = "Paused"
+                    # No ETA could mean paused OR finished
+                    # Check if download is complete
+                    if bytes_total > 0 and bytes_loaded >= bytes_total:
+                        status = "Completed"
+                    else:
+                        status = "Paused"
                 else:
                     time_left = format_eta(int(eta))
                     if mb_left == 0:
