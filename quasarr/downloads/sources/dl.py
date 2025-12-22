@@ -118,6 +118,8 @@ def extract_links_and_password_from_post(post_content, host):
             crypter_type = "filecrypt"
         elif re.search(r'hide\.', href, re.IGNORECASE):
             crypter_type = "hide"
+        elif re.search(r'keeplinks\.', href, re.IGNORECASE):
+            crypter_type = "keeplinks"
         else:
             debug(f"Unsupported link crypter/hoster found: {href}")
             debug(f"Currently only filecrypt and hide are supported. Other crypters may be added later.")
