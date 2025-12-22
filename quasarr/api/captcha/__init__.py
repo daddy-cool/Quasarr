@@ -16,7 +16,8 @@ from quasarr.downloads.packages import delete_package
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import info, debug
-from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_user_js, junkies_user_js
+from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_user_js, junkies_user_js, \
+    keeplinks_user_js
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -87,9 +88,18 @@ def setup_captcha_routes(app):
                 for link in prioritized_links
             )
 
+            # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
+            has_keeplinks_links = any(
+                ("keeplinks." in link[0] if isinstance(link, (list, tuple)) else "keeplinks." in link)
+                for link in prioritized_links
+            )
+
             if has_junkies_links:
                 debug("Redirecting to Junkies CAPTCHA")
                 redirect(f"/captcha/junkies?data={quote(encoded_payload)}")
+            elif has_keeplinks_links:
+                debug("Redirecting to KeepLinks CAPTCHA")
+                redirect(f"/captcha/keeplinks?data={quote(encoded_payload)}")
             elif filecrypt_session:
                 debug(f'Redirecting to circle CAPTCHA')
                 redirect(f"/captcha/circle?data={quote(encoded_payload)}")
@@ -111,45 +121,24 @@ def setup_captcha_routes(app):
         except Exception as e:
             return {"error": f"Failed to decode payload: {str(e)}"}
 
-    @app.get("/captcha/junkies")
-    def serve_junkies_captcha():
-        payload = decode_payload()
+    def render_userscript_section(url, package_id, title, password, provider_type="junkies"):
+        """Render the userscript UI section for Junkies or KeepLinks pages
 
-        if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <p>{payload["error"]}</p>
-            <p>
-                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-            </p>''')
+        This is the MAIN solution for these providers (not a bypass/fallback).
 
-        package_id = payload.get("package_id")
-        title = payload.get("title")
-        password = payload.get("password")
-        urls = payload.get("links")
-        url = urls[0]
+        Args:
+            url: The URL to open with transfer params
+            package_id: Package identifier
+            title: Package title
+            password: Package password
+            provider_type: Either "junkies" or "keeplinks"
+        """
 
-        return render_centered_html(f"""
-        <!DOCTYPE html>
-        <html>
-          <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <p><b>Package:</b> {title}</p>
-                {render_junkies_section(url, package_id, title, password)}
-            <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
-            </p>
-            <p>
-                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-            </p>
-            
-          </body>
-        </html>""")
-
-    def render_junkies_section(url, package_id, title, password):
-        """Render the UI section for SJ and DJ pages"""
+        provider_name = "Junkies" if provider_type == "junkies" else "KeepLinks"
+        userscript_url = f"/captcha/{provider_type}.user.js"
+        storage_key = f"hide{provider_name}SetupInstructions"
 
         # Generate userscript URL with transfer params
-        # Get base URL of current request
         base_url = request.urlparts.scheme + '://' + request.urlparts.netloc
         transfer_url = f"{base_url}/captcha/quick-transfer"
 
@@ -170,7 +159,7 @@ def setup_captcha_routes(app):
                         <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                     </p>
                     <p style="margin-top: 0; margin-bottom: 12px;">
-                        <a href="/captcha/junkies.user.js" target="_blank">2. Install this userscript</a>
+                        <a href="{userscript_url}" target="_blank">2. Install this userscript</a>
                     </p>
                     <p style="margin-top: 0;">
                         <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -203,7 +192,7 @@ def setup_captcha_routes(app):
             </div>
             <script>
               // Handle setup instructions hide/show
-              const hideSetup = localStorage.getItem('hideJunkiesSetupInstructions');
+              const hideSetup = localStorage.getItem('{storage_key}');
               const setupBox = document.getElementById('setup-instructions');
               const showLink = document.getElementById('show-instructions-link');
 
@@ -214,7 +203,7 @@ def setup_captcha_routes(app):
 
               // Hide setup instructions
               document.getElementById('hide-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideJunkiesSetupInstructions', 'true');
+                localStorage.setItem('{storage_key}', 'true');
                 setupBox.style.display = 'none';
                 showLink.style.display = 'block';
               }});
@@ -222,12 +211,81 @@ def setup_captcha_routes(app):
               // Show setup instructions again
               document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
                 e.preventDefault();
-                localStorage.setItem('hideJunkiesSetupInstructions', 'false');
+                localStorage.setItem('{storage_key}', 'false');
                 setupBox.style.display = 'block';
                 showLink.style.display = 'none';
               }});
             </script>
         '''
+
+    @app.get("/captcha/junkies")
+    def serve_junkies_captcha():
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+        url = urls[0]
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Package:</b> {title}</p>
+                {render_userscript_section(url, package_id, title, password, "junkies")}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+
+          </body>
+        </html>""")
+
+    @app.get("/captcha/keeplinks")
+    def serve_keeplinks_captcha():
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+        # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Package:</b> {title}</p>
+                {render_userscript_section(url, package_id, title, password, "keeplinks")}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+
+          </body>
+        </html>""")
 
     @app.get('/captcha/junkies.user.js')
     def serve_junkies_user_js():
@@ -235,6 +293,12 @@ def setup_captcha_routes(app):
         dj = shared_state.values["config"]("Hostnames").get("dj")
 
         content = junkies_user_js(sj, dj)
+        response.content_type = 'application/javascript'
+        return content
+
+    @app.get('/captcha/keeplinks.user.js')
+    def serve_keeplinks_user_js():
+        content = keeplinks_user_js()
         response.content_type = 'application/javascript'
         return content
 
