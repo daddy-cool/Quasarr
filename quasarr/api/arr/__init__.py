@@ -353,6 +353,17 @@ def setup_arr_routes(app):
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
 
+                    if not items:
+                        items = f'''
+                        <item>
+                            <title>No results found</title>
+                            <guid isPermaLink="False">0</guid>
+                            <link>https://github.com/rix1337/Quasarr</link>
+                            <comments>No results matched your search criteria.</comments>
+                            <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
+                            <enclosure url="https://github.com/rix1337/Quasarr" length="0" type="application/x-nzb" />
+                        </item>'''
+
                     return f'''<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
                                     <channel>

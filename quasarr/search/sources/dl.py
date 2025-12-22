@@ -5,7 +5,6 @@
 import re
 import time
 from base64 import urlsafe_b64encode
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from html import unescape
 
@@ -16,7 +15,27 @@ from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dl import retrieve_and_validate_session, invalidate_session, fetch_via_requests_session
 
 hostname = "dl"
-supported_mirrors = []
+
+RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
+CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
+XXX_REGEX = re.compile(r"\.xxx\.", re.I)
+
+
+def convert_to_rss_date(iso_date_str):
+    """
+    Convert ISO format datetime to RSS date format.
+    DL date format: '2025-12-15T20:43:06+0100'
+    Returns: 'Sun, 15 Dec 2025 20:43:06 +0100'
+    Falls back to current time if conversion fails.
+    """
+    if not iso_date_str:
+        return datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+
+    try:
+        dt_obj = datetime.fromisoformat(iso_date_str)
+        return dt_obj.strftime("%a, %d %b %Y %H:%M:%S %z")
+    except Exception:
+        return datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
 def normalize_title_for_sonarr(title):
@@ -95,21 +114,9 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                     thread_url = f"https://www.{host}{thread_url}"
 
                 # Extract date and convert to RFC 2822 format
-                date_str = None
                 date_elem = item.select_one('time.u-dt')
-                if date_elem:
-                    iso_date = date_elem.get('datetime', '')
-                    if iso_date:
-                        try:
-                            # Parse ISO format and convert to RFC 2822
-                            dt = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
-                            date_str = dt.strftime("%a, %d %b %Y %H:%M:%S %z")
-                        except Exception:
-                            date_str = None
-
-                # Fallback: use current time if no date found
-                if not date_str:
-                    date_str = datetime.now().strftime("%a, %d %b %Y %H:%M:%S %z")
+                iso_date = date_elem.get('datetime', '') if date_elem else ''
+                published = convert_to_rss_date(iso_date)
 
                 mb = 0
                 imdb_id = None
@@ -128,7 +135,7 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                         "link": link,
                         "mirror": mirror,
                         "size": mb * 1024 * 1024,
-                        "date": date_str,
+                        "date": published,
                         "source": thread_url
                     },
                     "type": "protected"
@@ -228,6 +235,15 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                 title = unescape(title)
                 title_normalized = normalize_title_for_sonarr(title)
 
+                # Filter: Skip if no resolution or codec info (unless LazyLibrarian)
+                if 'lazylibrarian' not in request_from.lower():
+                    if not (RESOLUTION_REGEX.search(title_normalized) or CODEC_REGEX.search(title_normalized)):
+                        continue
+
+                # Filter: Skip XXX content unless explicitly searched for
+                if XXX_REGEX.search(title_normalized) and 'xxx' not in search_string.lower():
+                    continue
+
                 thread_url = title_elem.get('href')
                 if thread_url.startswith('/'):
                     thread_url = f"https://www.{host}{thread_url}"
@@ -235,16 +251,10 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                 if not shared_state.is_valid_release(title_normalized, request_from, search_string, season, episode):
                     continue
 
-                minor_info = item.select_one('div.contentRow-minor')
-                date_str = ""
-                if minor_info:
-                    date_elem = minor_info.select_one('time.u-dt')
-                    if date_elem:
-                        date_str = date_elem.get('datetime', '')
-
-                # Fallback: use current time if no date found
-                if not date_str:
-                    date_str = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+                # Extract date and convert to RFC 2822 format
+                date_elem = item.select_one('time.u-dt')
+                iso_date = date_elem.get('datetime', '') if date_elem else ''
+                published = convert_to_rss_date(iso_date)
 
                 mb = 0
                 password = ""
@@ -262,7 +272,7 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                         "link": link,
                         "mirror": mirror,
                         "size": mb * 1024 * 1024,
-                        "date": date_str,
+                        "date": published,
                         "source": thread_url
                     },
                     "type": "protected"

@@ -17,9 +17,10 @@ from quasarr.providers.log import info, debug
 
 hostname = "by"
 supported_mirrors = ["rapidgator", "ddownload", "nitroflare"]
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
+
 RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
 CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
+XXX_REGEX = re.compile(r"\.xxx\.", re.I)
 IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)")
 
 
