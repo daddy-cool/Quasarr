@@ -55,12 +55,7 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
             debug(f"{hostname.upper()}: No entries found in RSS feed")
             return releases
 
-        max_releases = 100
-        if len(items) > max_releases:
-            debug(f"{hostname.upper()}: Found {len(items)} entries, limiting to {max_releases}")
-            items = items[:max_releases]
-        else:
-            debug(f"{hostname.upper()}: Found {len(items)} entries in RSS feed")
+        debug(f"{hostname.upper()}: Found {len(items)} entries in RSS feed")
 
         for item in items:
             try:
