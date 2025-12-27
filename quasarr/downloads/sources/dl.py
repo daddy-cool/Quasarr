@@ -52,22 +52,49 @@ def extract_mirror_name_from_link(link_element):
     link_text = link_element.get_text(strip=True)
     common_non_hosters = {'download', 'mirror', 'link', 'hier', 'click', 'klick', 'code', 'spoiler'}
 
+    # Known hoster patterns for image detection
+    known_hosters = {
+        'rapidgator': ['rapidgator', 'rg'],
+        'ddownload': ['ddownload', 'ddl'],
+        'turbobit': ['turbobit'],
+        '1fichier': ['1fichier'],
+    }
+
     if link_text and len(link_text) > 2:
         cleaned = re.sub(r'[^\w\s-]', '', link_text).strip().lower()
         if cleaned and cleaned not in common_non_hosters:
             main_part = cleaned.split()[0] if ' ' in cleaned else cleaned
-            if len(main_part) > 2:
+            if 2 < len(main_part) < 30:
                 return main_part
 
     parent = link_element.parent
     if parent:
         for sibling in link_element.previous_siblings:
-            if hasattr(sibling, 'get_text'):
-                sibling_text = sibling.get_text(strip=True).lower()
-                if sibling_text and len(sibling_text) > 2 and sibling_text not in common_non_hosters:
-                    cleaned = re.sub(r'[^\w\s-]', '', sibling_text).strip()
-                    if cleaned:
-                        return cleaned.split()[0] if ' ' in cleaned else cleaned
+            # Only process Tag elements, skip NavigableString (text nodes)
+            if not hasattr(sibling, 'name') or sibling.name is None:
+                continue
+
+            # Skip spoiler elements entirely
+            classes = sibling.get('class', [])
+            if classes and any('spoiler' in str(c).lower() for c in classes):
+                continue
+
+            # Check for images with hoster names in src/alt/data-url
+            img = sibling.find('img') if sibling.name != 'img' else sibling
+            if img:
+                img_identifiers = (img.get('src', '') + img.get('alt', '') + img.get('data-url', '')).lower()
+                for hoster, patterns in known_hosters.items():
+                    if any(pattern in img_identifiers for pattern in patterns):
+                        return hoster
+
+            sibling_text = sibling.get_text(strip=True).lower()
+            # Skip if text is too long - likely NFO content or other non-mirror text
+            if len(sibling_text) > 30:
+                continue
+            if sibling_text and len(sibling_text) > 2 and sibling_text not in common_non_hosters:
+                cleaned = re.sub(r'[^\w\s-]', '', sibling_text).strip()
+                if cleaned and 2 < len(cleaned) < 30:
+                    return cleaned.split()[0] if ' ' in cleaned else cleaned
 
     return None
 
