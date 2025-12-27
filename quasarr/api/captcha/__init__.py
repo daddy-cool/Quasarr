@@ -82,10 +82,16 @@ def setup_captcha_routes(app):
 
             sj = shared_state.values["config"]("Hostnames").get("sj")
             dj = shared_state.values["config"]("Hostnames").get("dj")
-            has_junkies_links = any(
-                (sj and sj in link) or (dj and dj in link)
-                for link in prioritized_links
-            )
+
+            def is_junkies_link(link):
+                """Check if link is a junkies link (handles [[url, mirror]] format)."""
+                url = link[0] if isinstance(link, (list, tuple)) else link
+                mirror = link[1] if isinstance(link, (list, tuple)) and len(link) > 1 else ""
+                if mirror == "junkies":
+                    return True
+                return (sj and sj in url) or (dj and dj in url)
+
+            has_junkies_links = any(is_junkies_link(link) for link in prioritized_links)
 
             # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
             has_keeplinks_links = any(
@@ -182,7 +188,7 @@ def setup_captcha_routes(app):
                     <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
                 </div>
 
-                <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
+                <strong><a href="{url_with_quick_transfer_params}" target="_self">🔗 Obtain the download links here!</a></strong><br><br>
 
                 <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="package_id" value="{package_id}" />
@@ -242,7 +248,7 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
-        url = urls[0]
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -501,12 +507,12 @@ def setup_captcha_routes(app):
             try:
                 decompressed = zlib.decompress(decoded, -15)  # -15 = raw deflate, no zlib header
             except Exception as e:
-                info(f"Decompression error: {e}, trying with header...")
+                debug(f"Decompression error: {e}, trying with header...")
                 try:
                     # Fallback: try with zlib header
                     decompressed = zlib.decompress(decoded)
                 except Exception as e2:
-                    info(f"Decompression also failed with header: {e2}")
+                    info(f"Decompression failed without and with header: {e2}")
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decompress data: {str(e)}</p>
                     <p>
