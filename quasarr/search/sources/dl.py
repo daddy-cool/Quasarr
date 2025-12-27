@@ -306,7 +306,7 @@ def dl_search(shared_state, start_time, request_from, search_string,
         search_string = title
 
     search_string = unescape(search_string)
-    max_search_duration = 10
+    max_search_duration = 7
 
     debug(
         f"{hostname}: Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - max {max_search_duration}s")
