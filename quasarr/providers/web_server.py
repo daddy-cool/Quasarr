@@ -3,7 +3,7 @@
 # Project by https://github.com/rix1337
 
 import time
-from socketserver import ThreadingMixIn
+from socketserver import ThreadingMixIn, TCPServer
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler, make_server
 
 temp_server_success = False
@@ -11,6 +11,13 @@ temp_server_success = False
 
 class ThreadingWSGIServer(ThreadingMixIn, WSGIServer):
     daemon_threads = True
+
+    def server_bind(self):
+        """Override to avoid slow getfqdn() call"""
+        TCPServer.server_bind(self)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+        self.setup_environ()
 
 
 class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
