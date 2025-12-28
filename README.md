@@ -9,12 +9,12 @@ Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decr
 [![GitHub Sponsorship](https://img.shields.io/badge/support-me-red.svg)](https://github.com/users/rix1337/sponsorship)
 
 Quasarr pretends to be both `Newznab Indexer` and `SABnzbd client`. Therefore, do not try to use it with real usenet
-indexers or download clients. It simply does not know what NZB or torrent files are.
+indexers. It simply does not know what NZB files are.
 
 Quasarr includes a solution to quickly and easily decrypt protected links.
 [Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
 Alternatively, follow the link from the console output (or discord notification) to solve CAPTCHAs manually.
-Quasarr will confidently handle the rest.
+Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be installed in your browser.
 
 # Instructions
 1. Set up and run [FlareSolverr 3](https://github.com/FlareSolverr/FlareSolverr).
