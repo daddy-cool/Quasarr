@@ -182,14 +182,28 @@ def setup_captcha_routes(app):
 
         return f'''
             <div>
+                <!-- Info section explaining the process -->
+                <div style="background: #1a3a1a; border: 2px solid #2d5a2d; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                    <h3 style="margin-top: 0; color: #6fbf6f;">ℹ️ How This Works:</h3>
+                    <p style="margin-bottom: 8px;">
+                        1. Click the link below to open {provider_name}
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 8px;">
+                        2. Solve any CAPTCHAs on their site to reveal the download links
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 0;">
+                        3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
+                    </p>
+                </div>
+
                 <!-- One-time setup section - visually separated -->
                 <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                    <h3 style="margin-top: 0; color: #58a6ff;">First Time Setup:</h3>
+                    <h3 style="margin-top: 0; color: #58a6ff;">📦 First Time Setup:</h3>
                     <p style="margin-bottom: 8px;">
                         <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                     </p>
                     <p style="margin-top: 0; margin-bottom: 12px;">
-                        <a href="{userscript_url}" target="_blank">2. Install this userscript</a>
+                        <a href="{userscript_url}" target="_blank">2. Install the {provider_name} userscript</a>
                     </p>
                     <p style="margin-top: 0;">
                         <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -198,29 +212,59 @@ def setup_captcha_routes(app):
                     </p>
                 </div>
 
-                <!-- Hidden "show instructions" link -->
+                <!-- Hidden "show instructions" button -->
                 <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                    <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
+                    <button id="show-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                        ℹ️ Show setup instructions
+                    </button>
                 </div>
 
-                <strong><a href="{url_with_quick_transfer_params}" target="_self">🔗 Obtain the download links here!</a></strong><br><br>
+                <!-- Primary action - the quick transfer link -->
+                <p>
+                    {render_button(f"Open {provider_name} & Get Download Links", "primary", {"onclick": f"location.href='{url_with_quick_transfer_params}'"})}
+                </p>
 
-                <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="package_id" value="{package_id}" />
-                    <input type="hidden" name="title" value="{title}" />
-                    <input type="hidden" name="password" value="{password}" />
+                <!-- Manual submission - collapsible -->
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #444;">
+                    <details id="manualSubmitDetails">
+                        <summary id="manualSubmitSummary" style="cursor: pointer; color: #888;">Show Manual Submission</summary>
+                        <div style="margin-top: 16px;">
+                            <p style="color: #888; font-size: 0.9em;">
+                                If the userscript doesn't work, you can manually paste the links below:
+                            </p>
+                            <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="package_id" value="{package_id}" />
+                                <input type="hidden" name="title" value="{title}" />
+                                <input type="hidden" name="password" value="{password}" />
 
-                    <div>
-                        <strong>Paste the download links (one per line):</strong>
-                        <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
-                    </div>
+                                <div>
+                                    <strong>Paste the download links (one per line):</strong>
+                                    <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                                </div>
 
-                    <div>
-                        {render_button("Submit", "primary", {"type": "submit"})}
-                    </div>
-                </form>
+                                <div>
+                                    {render_button("Submit", "primary", {"type": "submit"})}
+                                </div>
+                            </form>
+                        </div>
+                    </details>
+                </div>
             </div>
             <script>
+              // Handle manual submission toggle text
+              const manualDetails = document.getElementById('manualSubmitDetails');
+              const manualSummary = document.getElementById('manualSubmitSummary');
+
+              if (manualDetails && manualSummary) {{
+                manualDetails.addEventListener('toggle', () => {{
+                  if (manualDetails.open) {{
+                    manualSummary.textContent = 'Hide Manual Submission';
+                  }} else {{
+                    manualSummary.textContent = 'Show Manual Submission';
+                  }}
+                }});
+              }}
+
               // Handle setup instructions hide/show
               const hideSetup = localStorage.getItem('{storage_key}');
               const setupBox = document.getElementById('setup-instructions');
@@ -239,8 +283,7 @@ def setup_captcha_routes(app):
               }});
 
               // Show setup instructions again
-              document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
-                e.preventDefault();
+              document.getElementById('show-setup-btn').addEventListener('click', function() {{
                 localStorage.setItem('{storage_key}', 'false');
                 setupBox.style.display = 'block';
                 showLink.style.display = 'none';
@@ -358,6 +401,12 @@ def setup_captcha_routes(app):
           </body>
         </html>""")
 
+    @app.get('/captcha/filecrypt.user.js')
+    def serve_filecrypt_user_js():
+        content = obfuscated.filecrypt_user_js()
+        response.content_type = 'application/javascript'
+        return content
+
     @app.get('/captcha/junkies.user.js')
     def serve_junkies_user_js():
         sj = shared_state.values["config"]("Hostnames").get("sj")
@@ -379,12 +428,6 @@ def setup_captcha_routes(app):
         response.content_type = 'application/javascript'
         return content
 
-    @app.get('/captcha/filecrypt.user.js')
-    def serve_filecrypt_user_js():
-        content = obfuscated.filecrypt_user_js()
-        response.content_type = 'application/javascript'
-        return content
-
     def render_filecrypt_bypass_section(url, package_id, title, password):
         """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
 
@@ -402,18 +445,32 @@ def setup_captcha_routes(app):
         )
 
         return f'''
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc;">
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc; max-width: 370px; margin-left: auto; margin-right: auto;">
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
 
+                    <!-- Info section explaining the process -->
+                    <div style="background: #1a3a1a; border: 2px solid #2d5a2d; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                        <h3 style="margin-top: 0; color: #6fbf6f;">ℹ️ How This Works:</h3>
+                        <p style="margin-bottom: 8px;">
+                            1. Click the button below to open FileCrypt directly
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 8px;">
+                            2. Solve any CAPTCHAs on their site to reveal the download links
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 0;">
+                            3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
+                        </p>
+                    </div>
+
                     <!-- One-time setup section - visually separated -->
                     <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                        <h3 style="margin-top: 0; color: #58a6ff;">First Time Setup:</h3>
+                        <h3 style="margin-top: 0; color: #58a6ff;">📦 First Time Setup:</h3>
                         <p style="margin-bottom: 8px;">
                             <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                         </p>
                         <p style="margin-top: 0; margin-bottom: 12px;">
-                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install this userscript</a>
+                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
                         </p>
                         <p style="margin-top: 0;">
                             <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -422,32 +479,43 @@ def setup_captcha_routes(app):
                         </p>
                     </div>
 
-                    <!-- Hidden "show instructions" link -->
+                    <!-- Hidden "show instructions" button -->
                     <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                        <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
+                        <button id="show-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                            ℹ️ Show setup instructions
+                        </button>
                     </div>
 
-                    <strong><a href="{url_with_quick_transfer_params}" target="_self">🔗 Obtain the download links here!</a></strong><br><br>
+                    <!-- Primary action button -->
+                    <p>
+                        {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"location.href='{url_with_quick_transfer_params}'"})}
+                    </p>
 
-                    <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
-                        <input type="hidden" name="package_id" value="{package_id}" />
-                        <input type="hidden" name="title" value="{title}" />
-                        <input type="hidden" name="password" value="{password}" />
+                    <!-- Manual submission section -->
+                    <div style="margin-top: 24px; padding-top: 20px; border-top: 2px solid #444;">
+                        <p style="color: #888; font-size: 0.9em; margin-bottom: 16px;">
+                            If the userscript doesn't work, you can manually paste the links or upload a DLC file:
+                        </p>
+                        <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                            <input type="hidden" name="package_id" value="{package_id}" />
+                            <input type="hidden" name="title" value="{title}" />
+                            <input type="hidden" name="password" value="{password}" />
 
-                        <div>
-                            <strong>Paste the download links (one per line):</strong>
-                            <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
-                        </div>
+                            <div>
+                                <strong>Paste the download links (one per line):</strong>
+                                <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                            </div>
 
-                        <div>
-                            <strong>Or upload DLC file:</strong><br>
-                            <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
-                        </div>
+                            <div>
+                                <strong>Or upload DLC file:</strong><br>
+                                <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
+                            </div>
 
-                        <div>
-                            {render_button("Submit", "primary", {"type": "submit"})}
-                        </div>
-                    </form>
+                            <div>
+                                {render_button("Submit", "primary", {"type": "submit"})}
+                            </div>
+                        </form>
+                    </div>
                 </details>
             </div>
             <script>
@@ -483,8 +551,7 @@ def setup_captcha_routes(app):
               }});
 
               // Show setup instructions again
-              document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
-                e.preventDefault();
+              document.getElementById('show-setup-btn').addEventListener('click', function() {{
                 localStorage.setItem('hideFileCryptSetupInstructions', 'false');
                 setupBox.style.display = 'block';
                 showLink.style.display = 'none';
@@ -764,7 +831,7 @@ def setup_captcha_routes(app):
                         reloadSection.style.display = "block";
                     });
                 }
-                ''' + obfuscated.captcha_js() + f'''</script>
+                ''' + obfuscated.cutcaptcha_custom_js() + f'''</script>
                 <div>
                     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
