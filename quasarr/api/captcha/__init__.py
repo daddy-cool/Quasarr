@@ -192,8 +192,8 @@ def setup_captcha_routes(app):
         return f'''
             <div>
                 <!-- Info section explaining the process -->
-                <div style="background: #1a3a1a; border: 2px solid #2d5a2d; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                    <h3 style="margin-top: 0; color: #6fbf6f;">ℹ️ How This Works:</h3>
+                <div class="info-box">
+                    <h3>ℹ️ How This Works:</h3>
                     <p style="margin-bottom: 8px;">
                         1. Click the link below to open {provider_name}
                     </p>
@@ -206,8 +206,8 @@ def setup_captcha_routes(app):
                 </div>
 
                 <!-- One-time setup section - visually separated -->
-                <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                    <h3 style="margin-top: 0; color: #58a6ff;">📦 First Time Setup:</h3>
+                <div id="setup-instructions" class="setup-box">
+                    <h3>📦 First Time Setup:</h3>
                     <p style="margin-bottom: 8px;">
                         <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                     </p>
@@ -215,7 +215,7 @@ def setup_captcha_routes(app):
                         <a href="{userscript_url}" target="_blank">2. Install the {provider_name} userscript</a>
                     </p>
                     <p style="margin-top: 0;">
-                        <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                        <button id="hide-setup-btn" type="button" class="btn-subtle">
                             ✅ Don't show this again
                         </button>
                     </p>
@@ -223,7 +223,7 @@ def setup_captcha_routes(app):
 
                 <!-- Hidden "show instructions" button -->
                 <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                    <button id="show-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                    <button id="show-setup-btn" type="button" class="btn-subtle">
                         ℹ️ Show setup instructions
                     </button>
                 </div>
@@ -234,11 +234,11 @@ def setup_captcha_routes(app):
                 </p>
 
                 <!-- Manual submission - collapsible -->
-                <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #444;">
+                <div class="section-divider">
                     <details id="manualSubmitDetails">
-                        <summary id="manualSubmitSummary" style="cursor: pointer; color: #888;">Show Manual Submission</summary>
+                        <summary id="manualSubmitSummary" style="cursor: pointer;">Show Manual Submission</summary>
                         <div style="margin-top: 16px;">
-                            <p style="color: #888; font-size: 0.9em;">
+                            <p style="font-size: 0.9em;">
                                 If the userscript doesn't work, you can manually paste the links below:
                             </p>
                             <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
@@ -496,13 +496,13 @@ def setup_captcha_routes(app):
         )
 
         return f'''
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc; max-width: 370px; margin-left: auto; margin-right: auto;">
+            <div class="section-divider" style="max-width: 370px; margin-left: auto; margin-right: auto;">
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
 
                     <!-- Info section explaining the process -->
-                    <div style="background: #1a3a1a; border: 2px solid #2d5a2d; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                        <h3 style="margin-top: 0; color: #6fbf6f;">ℹ️ How This Works:</h3>
+                    <div class="info-box">
+                        <h3>ℹ️ How This Works:</h3>
                         <p style="margin-bottom: 8px;">
                             1. Click the button below to open FileCrypt directly
                         </p>
@@ -515,8 +515,8 @@ def setup_captcha_routes(app):
                     </div>
 
                     <!-- One-time setup section - visually separated -->
-                    <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                        <h3 style="margin-top: 0; color: #58a6ff;">📦 First Time Setup:</h3>
+                    <div id="setup-instructions" class="setup-box">
+                        <h3>📦 First Time Setup:</h3>
                         <p style="margin-bottom: 8px;">
                             <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                         </p>
@@ -524,7 +524,7 @@ def setup_captcha_routes(app):
                             <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
                         </p>
                         <p style="margin-top: 0;">
-                            <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                            <button id="hide-setup-btn" type="button" class="btn-subtle">
                                 ✅ Don't show this again
                             </button>
                         </p>
@@ -532,7 +532,7 @@ def setup_captcha_routes(app):
 
                     <!-- Hidden "show instructions" button -->
                     <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                        <button id="show-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                        <button id="show-setup-btn" type="button" class="btn-subtle">
                             ℹ️ Show setup instructions
                         </button>
                     </div>
@@ -543,8 +543,8 @@ def setup_captcha_routes(app):
                     </p>
 
                     <!-- Manual submission section -->
-                    <div style="margin-top: 24px; padding-top: 20px; border-top: 2px solid #444;">
-                        <p style="color: #888; font-size: 0.9em; margin-bottom: 16px;">
+                    <div class="section-divider">
+                        <p style="font-size: 0.9em; margin-bottom: 16px;">
                             If the userscript doesn't work, you can manually paste the links or upload a DLC file:
                         </p>
                         <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">

@@ -24,6 +24,11 @@ def render_centered_html(inner_content):
                 --secondary: #6c757d;
                 --code-bg: #f8f9fa;
                 --spacing: 1rem;
+                --info-border: #2d5a2d;
+                --setup-border: var(--primary);
+                --divider-color: #dee2e6;
+                --btn-subtle-bg: #e9ecef;
+                --btn-subtle-border: #ced4da;
             }
             @media (prefers-color-scheme: dark) {
                 :root {
@@ -32,7 +37,49 @@ def render_centered_html(inner_content):
                     --card-bg: #242526;
                     --card-shadow: rgba(0, 0, 0, 0.5);
                     --code-bg: #2c2f33;
+                    --info-border: #4a8c4a;
+                    --setup-border: var(--primary);
+                    --divider-color: #444;
+                    --btn-subtle-bg: #444;
+                    --btn-subtle-border: #666;
                 }
+            }
+            /* Info box styling */
+            .info-box {
+                border: 1px solid var(--info-border);
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 24px;
+            }
+            .info-box h3 {
+                margin-top: 0;
+                color: var(--info-border);
+            }
+            /* Setup box styling */
+            .setup-box {
+                border: 1px solid var(--setup-border);
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 24px;
+            }
+            .setup-box h3 {
+                margin-top: 0;
+                color: var(--setup-border);
+            }
+            /* Subtle button styling */
+            .btn-subtle {
+                background: var(--btn-subtle-bg);
+                color: var(--fg-color);
+                border: 1px solid var(--btn-subtle-border);
+                padding: 6px 12px;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            /* Divider styling */
+            .section-divider {
+                margin-top: 20px;
+                padding-top: 20px;
+                border-top: 1px solid var(--divider-color);
             }
             /* Logo and heading alignment */
             h1 {
@@ -159,7 +206,7 @@ def render_centered_html(inner_content):
                 text-decoration: none;
             }
             a:hover {
-               
+
             }
             /* footer styling */
             footer {
