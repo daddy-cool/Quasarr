@@ -202,7 +202,8 @@ def process_links(shared_state, source_result, title, password, package_id, imdb
         if result["success"]:
             send_discord_message(shared_state, title=title, case="unprotected", imdb_id=imdb_id, source=source_url)
             return {"success": True, "title": title}
-        info(f"Auto-decrypt failed for {title}, checking for protected fallback...")
+        info(f"Auto-decrypt failed for {title}, falling back to manual CAPTCHA...")
+        classified['protected'].extend(classified['auto'])
 
     # PRIORITY 3: Protected (filecrypt, tolink, keeplinks, junkies)
     if classified['protected']:
