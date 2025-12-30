@@ -66,14 +66,21 @@ def render_centered_html(inner_content):
                 margin-top: 0;
                 color: var(--setup-border);
             }
-            /* Subtle button styling */
+            /* Subtle button styling (ghost style) */
             .btn-subtle {
-                background: var(--btn-subtle-bg);
+                background: transparent;
                 color: var(--fg-color);
-                border: 1px solid var(--btn-subtle-border);
-                padding: 6px 12px;
-                border-radius: 4px;
+                border: 1.5px solid var(--btn-subtle-border);
+                padding: 8px 16px;
+                border-radius: 0.5rem;
                 cursor: pointer;
+                font-size: 1rem;
+                font-weight: 500;
+                transition: background-color 0.2s ease, border-color 0.2s ease;
+            }
+            .btn-subtle:hover {
+                background: var(--btn-subtle-bg);
+                border-color: var(--fg-color);
             }
             /* Divider styling */
             .section-divider {
@@ -189,17 +196,28 @@ def render_centered_html(inner_content):
                 border-radius: 0.5rem;
                 font-weight: 500;
                 cursor: pointer;
-                transition: background-color 0.2s ease, border-color 0.2s ease;
-                border: none;
+                transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
                 margin-top: 0.5rem;
             }
             .btn-primary {
                 background-color: var(--primary);
                 color: #fff;
+                border: 1.5px solid #0856c7;
+            }
+            .btn-primary:hover {
+                background-color: #0b5ed7;
+                border-color: #084298;
+                box-shadow: 0 2px 6px rgba(13, 110, 253, 0.4);
             }
             .btn-secondary {
                 background-color: var(--secondary);
                 color: #fff;
+                border: 1.5px solid #565e64;
+            }
+            .btn-secondary:hover {
+                background-color: #5c636a;
+                border-color: #41464b;
+                box-shadow: 0 2px 6px rgba(108, 117, 125, 0.4);
             }
             a {
                 color: var(--primary);
