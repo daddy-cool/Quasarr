@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 
 import requests
@@ -29,18 +30,31 @@ def unhide_links(shared_state, url):
         response = requests.get(container_url, headers=headers)
         data = response.json()
 
-        for link in data.get("links", []):
-            link_id = link.get("id")
-            if not link_id:
-                continue
+        link_ids = [link.get("id") for link in data.get("links", []) if link.get("id")]
 
+        if not link_ids:
+            debug(f"No link IDs found in container {container_id}")
+            return []
+
+        def fetch_link(link_id):
             debug(f"Fetching hide.cx link with ID: {link_id}")
             link_url = f"https://api.hide.cx/containers/{container_id}/links/{link_id}"
             link_data = requests.get(link_url, headers=headers).json()
+            return link_data.get("url")
 
-            final_url = link_data.get("url")
-            if final_url and final_url not in links:
-                links.append(final_url)
+        # Process links in batches of 10
+        batch_size = 10
+        for i in range(0, len(link_ids), batch_size):
+            batch = link_ids[i:i + batch_size]
+            with ThreadPoolExecutor(max_workers=batch_size) as executor:
+                futures = [executor.submit(fetch_link, link_id) for link_id in batch]
+                for future in as_completed(futures):
+                    try:
+                        final_url = future.result()
+                        if final_url and final_url not in links:
+                            links.append(final_url)
+                    except Exception as e:
+                        info(f"Error fetching link: {e}")
 
         success = bool(links)
         if success:

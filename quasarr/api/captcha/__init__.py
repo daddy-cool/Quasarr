@@ -108,6 +108,12 @@ def setup_captcha_routes(app):
 
             has_junkies_links = any(is_junkies_link(link) for link in prioritized_links)
 
+            # Hide uses nested arrays like FileCrypt: [["url", "mirror"]]
+            has_hide_links = any(
+                ("hide." in link[0] if isinstance(link, (list, tuple)) else "hide." in link)
+                for link in prioritized_links
+            )
+
             # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
             has_keeplinks_links = any(
                 ("keeplinks." in link[0] if isinstance(link, (list, tuple)) else "keeplinks." in link)
@@ -120,7 +126,10 @@ def setup_captcha_routes(app):
                 for link in prioritized_links
             )
 
-            if has_junkies_links:
+            if has_hide_links:
+                debug("Redirecting to Hide page")
+                redirect(f"/captcha/hide?data={quote(encoded_payload)}")
+            elif has_junkies_links:
                 debug("Redirecting to Junkies CAPTCHA")
                 redirect(f"/captcha/junkies?data={quote(encoded_payload)}")
             elif has_keeplinks_links:
@@ -151,7 +160,7 @@ def setup_captcha_routes(app):
             return {"error": f"Failed to decode payload: {str(e)}"}
 
     def render_userscript_section(url, package_id, title, password, provider_type="junkies"):
-        """Render the userscript UI section for Junkies, KeepLinks, or ToLink pages
+        """Render the userscript UI section for Junkies, KeepLinks, ToLink, or Hide pages
 
         This is the MAIN solution for these providers (not a bypass/fallback).
 
@@ -160,10 +169,10 @@ def setup_captcha_routes(app):
             package_id: Package identifier
             title: Package title
             password: Package password
-            provider_type: Either "junkies", "keeplinks", or "tolink"
+            provider_type: Either "hide", "junkies", "keeplinks", or "tolink"
         """
 
-        provider_names = {"junkies": "Junkies", "keeplinks": "KeepLinks", "tolink": "ToLink"}
+        provider_names = {"hide": "Hide", "junkies": "Junkies", "keeplinks": "KeepLinks", "tolink": "ToLink"}
         provider_name = provider_names.get(provider_type, "Provider")
         userscript_url = f"/captcha/{provider_type}.user.js"
         storage_key = f"hide{provider_name}SetupInstructions"
@@ -291,6 +300,42 @@ def setup_captcha_routes(app):
             </script>
         '''
 
+    @app.get("/captcha/hide")
+    def serve_hide_captcha():
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
+
+        check_package_exists(package_id)
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Package:</b> {title}</p>
+                {render_userscript_section(url, package_id, title, password, "hide")}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+
+          </body>
+        </html>""")
+
     @app.get("/captcha/junkies")
     def serve_junkies_captcha():
         payload = decode_payload()
@@ -404,6 +449,12 @@ def setup_captcha_routes(app):
     @app.get('/captcha/filecrypt.user.js')
     def serve_filecrypt_user_js():
         content = obfuscated.filecrypt_user_js()
+        response.content_type = 'application/javascript'
+        return content
+
+    @app.get('/captcha/hide.user.js')
+    def serve_hide_user_js():
+        content = obfuscated.hide_user_js()
         response.content_type = 'application/javascript'
         return content
 
