@@ -120,6 +120,7 @@ def connect_to_jd(jd, user, password, device_name):
         info("Error connecting to JDownloader: " + str(e).strip())
         return False
     if not device or not isinstance(device, (type, Jddevice)):
+        info(f'Device "{device_name}" not found. Available devices may differ or be offline.')
         return False
     else:
         device.downloadcontroller.get_current_state()  # request forces direct_connection info update

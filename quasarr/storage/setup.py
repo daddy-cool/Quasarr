@@ -6,7 +6,7 @@ import os
 import sys
 
 import requests
-from bottle import Bottle, request
+from bottle import Bottle, request, response
 
 import quasarr
 import quasarr.providers.html_images as images
@@ -21,19 +21,40 @@ from quasarr.providers.web_server import Server
 from quasarr.storage.config import Config
 
 
+def add_no_cache_headers(app):
+    """Add hooks to prevent browser caching of setup pages."""
+
+    @app.hook('after_request')
+    def set_no_cache():
+        response.set_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        response.set_header('Pragma', 'no-cache')
+        response.set_header('Expires', '0')
+
+
 def path_config(shared_state):
     app = Bottle()
+    add_no_cache_headers(app)
 
     current_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
     @app.get('/')
     def config_form():
         config_form_html = f'''
-            <form action="/api/config" method="post">
+            <form action="/api/config" method="post" onsubmit="return handleSubmit(this)">
                 <label for="config_path">Path</label>
                 <input type="text" id="config_path" name="config_path" placeholder="{current_path}"><br>
-                {render_button("Save", "primary", {"type": "submit"})}
+                {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
             </form>
+            <script>
+            var formSubmitted = false;
+            function handleSubmit(form) {{
+                if (formSubmitted) return false;
+                formSubmitted = true;
+                var btn = document.getElementById('submitBtn');
+                if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+                return true;
+            }}
+            </script>
             '''
         return render_form("Press 'Save' to set desired path for configuration",
                            config_form_html)
@@ -99,7 +120,7 @@ def hostname_form_html(shared_state, message):
         ))
 
     hostname_form_content = "".join(field_html)
-    button_html = render_button("Save", "primary", {"type": "submit"})
+    button_html = render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})
 
     template = """
 <div id="message" style="margin-bottom:0.5em;">{message}</div>
@@ -111,13 +132,19 @@ def hostname_form_html(shared_state, message):
 </form>
 
 <script>
+  var formSubmitted = false;
   function validateHostnames(form) {{
+    if (formSubmitted) return false;
+
     var errorDiv = document.getElementById('error-msg');
     errorDiv.textContent = '';
 
     var inputs = form.querySelectorAll('input[type="text"]');
     for (var i = 0; i < inputs.length; i++) {{
       if (inputs[i].value.trim() !== '') {{
+        formSubmitted = true;
+        var btn = document.getElementById('submitBtn');
+        if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
         return true;
       }}
     }}
@@ -205,13 +232,14 @@ def save_hostnames(shared_state, timeout=5, first_run=True):
 
 def hostnames_config(shared_state):
     app = Bottle()
+    add_no_cache_headers(app)
 
     @app.get('/')
     def hostname_form():
         message = """<p>
           If you're having trouble setting this up, take a closer look at 
-          <a href="https://github.com/rix1337/Quasarr?tab=readme-ov-file#instructions" target="_blank" rel="noopener noreferrer">
-            step one of these instructions.
+          <a href="https://github.com/rix1337/Quasarr?tab=readme-ov-file#quasarr" target="_blank" rel="noopener noreferrer">
+            the instructions.
           </a>
         </p>"""
         return render_form("Set at least one valid hostname", hostname_form_html(shared_state, message))
@@ -227,6 +255,7 @@ def hostnames_config(shared_state):
 
 def hostname_credentials_config(shared_state, shorthand, domain):
     app = Bottle()
+    add_no_cache_headers(app)
 
     shorthand = shorthand.upper()
 
@@ -242,16 +271,30 @@ def hostname_credentials_config(shared_state, shorthand, domain):
         '''
 
         form_html = f'''
-        <form action="/api/credentials/{shorthand}" method="post">
+        <form id="credentialsForm" action="/api/credentials/{shorthand}" method="post" onsubmit="return handleSubmit(this)">
             {form_content}
-            {render_button("Save", "primary", {"type": "submit"})}
+            {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
         </form>
+        <script>
+        var formSubmitted = false;
+        function handleSubmit(form) {{
+            if (formSubmitted) return false;
+            formSubmitted = true;
+            var btn = document.getElementById('submitBtn');
+            if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+            return true;
+        }}
+        </script>
         '''
 
         return render_form(f"Set User and Password for {shorthand}", form_html)
 
     @app.post("/api/credentials/<sh>")
     def set_credentials(sh):
+        # Guard against duplicate submissions (e.g., double-click)
+        if quasarr.providers.web_server.temp_server_success:
+            return render_success(f"{sh} credentials already being processed", 5)
+
         user = request.forms.get('user')
         password = request.forms.get('password')
         config = Config(shorthand)
@@ -294,6 +337,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
 def flaresolverr_config(shared_state):
     app = Bottle()
+    add_no_cache_headers(app)
 
     @app.get('/')
     def url_form():
@@ -304,10 +348,20 @@ def flaresolverr_config(shared_state):
         <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1"><br>
         '''
         form_html = f'''
-        <form action="/api/flaresolverr" method="post">
+        <form action="/api/flaresolverr" method="post" onsubmit="return handleSubmit(this)">
             {form_content}
-            {render_button("Save", "primary", {"type": "submit"})}
+            {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
         </form>
+        <script>
+        var formSubmitted = false;
+        function handleSubmit(form) {{
+            if (formSubmitted) return false;
+            formSubmitted = true;
+            var btn = document.getElementById('submitBtn');
+            if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+            return true;
+        }}
+        </script>
         '''
         return render_form("Set FlareSolverr URL", form_html)
 
@@ -315,6 +369,9 @@ def flaresolverr_config(shared_state):
     def set_flaresolverr_url():
         url = request.forms.get('url').strip()
         config = Config("FlareSolverr")
+
+        if not url.startswith("http://") and not url.startswith("https://"):
+            url = "http://" + url
 
         if url:
             try:
@@ -324,8 +381,8 @@ def flaresolverr_config(shared_state):
                     "url": "http://www.google.com/",
                     "maxTimeout": 30000
                 }
-                response = requests.post(url, headers=headers, json=data, timeout=30)
-                if response.status_code == 200:
+                resp = requests.post(url, headers=headers, json=data, timeout=30)
+                if resp.status_code == 200:
                     config.save("url", url)
                     print(f'Using Flaresolverr URL: "{url}"')
                     quasarr.providers.web_server.temp_server_success = True
@@ -347,6 +404,7 @@ def flaresolverr_config(shared_state):
 
 def jdownloader_config(shared_state):
     app = Bottle()
+    add_no_cache_headers(app)
 
     @app.get('/')
     def jd_form():
@@ -368,19 +426,26 @@ def jdownloader_config(shared_state):
 
         <p>Some JDownloader settings will be enforced by Quasarr on startup.</p>
 
-        <form action="/api/store_jdownloader" method="post" id="deviceForm" style="display: none;">
+        <form action="/api/store_jdownloader" method="post" id="deviceForm" style="display: none;" onsubmit="return handleStoreSubmit(this)">
             <input type="hidden" id="hiddenUser" name="user">
             <input type="hidden" id="hiddenPass" name="pass">
             <label for="device">JDownloader</label>
             <select id="device" name="device"></select><br>
-            {render_button("Save", "primary", {"type": "submit"})}
+            {render_button("Save", "primary", {"type": "submit", "id": "storeBtn"})}
         </form>
         <p><strong>Saving may take a while!</strong></p><br>
         '''
 
         verify_script = '''
         <script>
+        var verifyInProgress = false;
+        var storeSubmitted = false;
         function verifyCredentials() {
+            if (verifyInProgress) return;
+            verifyInProgress = true;
+            var btn = document.getElementById('verifyButton');
+            if (btn) { btn.disabled = true; btn.textContent = 'Verifying...'; }
+
             var user = document.getElementById('user').value;
             var pass = document.getElementById('pass').value;
             fetch('/api/verify_jdownloader', {
@@ -406,11 +471,22 @@ def jdownloader_config(shared_state):
                     document.getElementById('deviceForm').style.display = 'block';
                 } else {
                     alert('Fehler! Bitte die Zugangsdaten überprüfen.');
+                    verifyInProgress = false;
+                    if (btn) { btn.disabled = false; btn.textContent = 'Verify Credentials'; }
                 }
             })
             .catch((error) => {
                 console.error('Error:', error);
+                verifyInProgress = false;
+                if (btn) { btn.disabled = false; btn.textContent = 'Verify Credentials'; }
             });
+        }
+        function handleStoreSubmit(form) {
+            if (storeSubmitted) return false;
+            storeSubmitted = true;
+            var btn = document.getElementById('storeBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+            return true;
         }
         </script>
         '''
@@ -440,21 +516,15 @@ def jdownloader_config(shared_state):
         password = request.forms.get('pass')
         device = request.forms.get('device')
 
-        config = Config('JDownloader')
-
         if username and password and device:
-            config.save('user', username)
-            config.save('password', password)
-            config.save('device', device)
-
-            if not shared_state.set_device_from_config():
-                config.save('user', "")
-                config.save('password', "")
-                config.save('device', "")
-            else:
+            # Verify connection works before saving credentials
+            if shared_state.set_device(username, password, device):
+                config = Config('JDownloader')
+                config.save('user', username)
+                config.save('password', password)
+                config.save('device', device)
                 quasarr.providers.web_server.temp_server_success = True
-                return render_success("Credentials set",
-                                      15)
+                return render_success("Credentials set", 15)
 
         return render_fail("Could not set credentials!")
 
