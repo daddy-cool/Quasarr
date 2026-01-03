@@ -9,6 +9,8 @@ from urllib.parse import urlparse
 from quasarr.providers.log import info, debug
 from quasarr.providers.myjd_api import TokenExpiredException, RequestTimeoutException, MYJDException
 
+links_info_old = {}
+links_info = {}
 
 def get_links_comment(package, package_links):
     package_uuid = package.get("uuid")
@@ -19,7 +21,12 @@ def get_links_comment(package, package_links):
     return None
 
 
-def get_links_status(package, all_links, is_archive=False):
+def get_links_status(package, all_links, shared_state):
+    global links_info_old
+    global links_info
+
+    is_archive = False
+
     links_in_package = []
     package_uuid = package.get("uuid")
     if package_uuid and all_links:
@@ -37,6 +44,28 @@ def get_links_status(package, all_links, is_archive=False):
         url = link.get("url", "")
         base_domain = urlparse(url).netloc
         mirrors[base_domain].append(link)
+
+        link_id = link.get("uuid")
+        old_info = links_info_old.get(link_id)
+        if old_info:
+            links_info[link_id] = old_info
+        else:
+            links_info[link_id] = {}
+        if links_info[link_id].get("is_archive") is None:
+            try:
+                archive_info = shared_state.get_device().extraction.get_archive_info([link_id], [])
+                if archive_info and archive_info[0]:
+                    links_info[link_id]["is_archive"] = True
+                    debug("Link %s identified as archive" % link_id)
+                else:
+                    links_info[link_id]["is_archive"] = False
+                    debug("Link %s identified as non-archive" % link_id)
+            except:
+                debug("Error retrieving archive info for link %s" % link_id)
+        
+        if links_info[link_id].get("is_archive"):
+            is_archive = True
+
 
     has_mirror_all_online = False
     for mirror_links in mirrors.values():
@@ -65,14 +94,14 @@ def get_links_status(package, all_links, is_archive=False):
                 if eta and link_eta > eta or not eta:
                     eta = link_eta
             all_finished = False
-        elif is_archive:
+        elif links_info[link.get("uuid")].get("is_archive"):
             # For archives, check if extraction is actually complete
             link_status = link.get('status', '').lower()
             # Check for various "extraction complete" indicators
             if 'extraction ok' not in link_status and 'entpacken ok' not in link_status:
                 all_finished = False
 
-    return {"all_finished": all_finished, "eta": eta, "error": error, "offline_mirror_linkids": offline_mirror_linkids}
+    return {"all_finished": all_finished, "eta": eta, "error": error, "offline_mirror_linkids": offline_mirror_linkids, "is_archive": is_archive}
 
 
 def get_links_matching_package_uuid(package, package_links):
@@ -162,7 +191,7 @@ def get_packages(shared_state):
     if linkgrabber_packages:
         for package in linkgrabber_packages:
             comment = get_links_comment(package, shared_state.get_device().linkgrabber.query_links())
-            link_details = get_links_status(package, linkgrabber_links, is_archive=False)
+            link_details = get_links_status(package, linkgrabber_links, shared_state)
 
             error = link_details["error"]
             offline_mirror_linkids = link_details["offline_mirror_linkids"]
@@ -195,16 +224,7 @@ def get_packages(shared_state):
         for package in downloader_packages:
             comment = get_links_comment(package, downloader_links)
 
-            # Check if package is actually archived/extracted using archive info
-            is_archive = False
-            try:
-                archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
-                is_archive = True if archive_info and archive_info[0] else False
-            except:
-                # On error, don't assume it's an archive - check bytes instead
-                pass
-
-            link_details = get_links_status(package, downloader_links, is_archive)
+            link_details = get_links_status(package, downloader_links, shared_state)
 
             error = link_details["error"]
             finished = link_details["all_finished"]
@@ -219,7 +239,7 @@ def get_packages(shared_state):
                 # If download is complete and no ETA (paused/finished state)
                 if bytes_total > 0 and bytes_loaded >= bytes_total and eta is None:
                     # Only mark as finished if it's not an archive, or if we can't detect archives
-                    if not is_archive:
+                    if not link_details["is_archive"]:
                         finished = True
 
             if not finished and link_details["eta"]:
@@ -405,13 +425,17 @@ def get_packages(shared_state):
                         links_to_start.extend(linkgrabber_links)
                     else:
                         info(f"Package {package_uuid} has no links in linkgrabber - skipping start")
-
                     break
 
         if packages_to_start and links_to_start:
             shared_state.get_device().linkgrabber.move_to_downloadlist(links_to_start, packages_to_start)
             info(f"Started {len(packages_to_start)} package download"
                  f"{'s' if len(packages_to_start) > 1 else ''} from linkgrabber")
+
+    global links_info_old
+    global links_info
+    links_info_old = links_info
+    links_info = {}
 
     return downloads
 
