@@ -66,7 +66,7 @@ def get_search_results(
 
     start_time = time.time()
 
-    functions = []
+    search_executor = SearchExecutor()
 
     # Radarr/Sonarr use imdb_id for searches
     imdb_map = [
@@ -127,7 +127,7 @@ def get_search_results(
         )
         for flag, func in imdb_map:
             if flag:
-                functions.append(lambda f=func, a=args, kw=kwargs: f(*a, **kw))
+                search_executor.add(func, args, kwargs)
 
     elif (
         search_phrase and docs_search
@@ -138,7 +138,7 @@ def get_search_results(
         )
         for flag, func in phrase_map:
             if flag:
-                functions.append(lambda f=func, a=args, kw=kwargs: f(*a, **kw))
+                search_executor.add(func, args, kwargs)
 
     elif search_phrase:
         debug(
@@ -149,7 +149,7 @@ def get_search_results(
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
         for flag, func in feed_map:
             if flag:
-                functions.append(lambda f=func, a=args, kw=kwargs: f(*a, **kw))
+                search_executor.add(func, args, kwargs)
 
     if imdb_id:
         stype = f'IMDb-ID "{imdb_id}"'
@@ -158,22 +158,67 @@ def get_search_results(
     else:
         stype = "feed search"
 
-    info(
-        f"Starting {len(functions)} search functions for {stype}... This may take some time."
-    )
-
-    with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(func) for func in functions]
-        for future in as_completed(futures):
-            try:
-                result = future.result()
-                results.extend(result)
-            except Exception as e:
-                info(f"An error occurred: {e}")
-
+    info(f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time.")
+    search_results = search_executor.run_all()
+    results.extend(search_results)
     elapsed_time = time.time() - start_time
-    info(
-        f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
-    )
+    info(f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds")
 
     return results
+
+
+class SearchExecutor:
+    def __init__(self):
+        self.searches = {}
+
+    def add(self, func, args, kwargs):
+        # create cache key
+        key_args = list(args)
+        key_args[1] = 0  # ignore start_time in cache key
+        key_args = tuple(key_args)
+        key = (func.__name__, key_args, frozenset(kwargs.items()))
+        self.searches[key] = lambda: func(*args, **kwargs)
+
+    def run_all(self):
+        results = []
+        futures = []
+        keys = []
+
+        with ThreadPoolExecutor() as executor:
+            for key, func in self.searches.items():
+                if search_cache.get(key):
+                    results.extend(search_cache.get(key))
+                    continue
+                
+                futures.append(executor.submit(func))
+                keys.append(key)
+
+            for index, future in enumerate(as_completed(futures)):
+                try:
+                    result = future.result()
+                    results.extend(result)
+                    # cache the results
+                    search_cache.set(keys[index], result)
+                except Exception as e:
+                    info(f"An error occurred: {e}")
+
+        return results
+
+class SearchCache:
+    def __init__(self):
+        self.cache = {}
+
+    def get(self, key):
+        value, expiry = self.cache.get(key, (None, 0))
+        if time.time() < expiry:
+            return value
+
+        if key in self.cache:
+            del self.cache[key]
+        
+        return None
+
+    def set(self, key, value, ttl=60000):
+        self.cache[key] = (value, time.time() + ttl)
+
+search_cache = SearchCache()
