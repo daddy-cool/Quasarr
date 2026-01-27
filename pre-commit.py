@@ -15,7 +15,7 @@ def safe_print(msg):
     try:
         print(msg)
     except Exception:
-        print(msg.encode("cp1252", errors="replace"))
+        print(msg.encode("cp1252", errors="replace").decode("cp1252"))
 
 
 def run(cmd, check=True, capture=False, text=True):
