@@ -168,6 +168,8 @@ def get_search_results(
         f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
     )
 
+    search_cache.clean()
+
     return results
 
 
@@ -214,7 +216,21 @@ class SearchExecutor:
 
 class SearchCache:
     def __init__(self):
+        self.last_clean = time.time()
         self.cache = {}
+
+    def clean(self):
+        if time.time() - self.last_clean < 60:
+            return
+
+        keys_to_delete = [
+            key for key, (_, expiry) in self.cache.items() if time.time() >= expiry
+        ]
+
+        for key in keys_to_delete:
+            del self.cache[key]
+
+        self.last_clean = time.time()
 
     def get(self, key):
         value, expiry = self.cache.get(key, (None, 0))
