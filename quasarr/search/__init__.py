@@ -212,35 +212,33 @@ class SearchExecutor:
 
 class SearchCache:
     def __init__(self):
-        self.last_clean = time.time()
+        self.last_cleaned = time.time()
         self.cache = {}
 
-    def clean(self):
-        if time.time() - self.last_clean < 60:
+    def clean(self, now):
+        if now - self.last_cleaned < 60:
             return
 
         keys_to_delete = [
-            key for key, (_, expiry) in self.cache.items() if time.time() >= expiry
+            key for key, (_, expiry) in self.cache.items() if now >= expiry
         ]
 
         for key in keys_to_delete:
             del self.cache[key]
 
-        self.last_clean = time.time()
+        self.last_cleaned = now
 
     def get(self, key):
         value, expiry = self.cache.get(key, (None, 0))
         if time.time() < expiry:
             return value
 
-        if key in self.cache:
-            del self.cache[key]
-
         return None
 
     def set(self, key, value, ttl=300):
-        self.clean()
-        self.cache[key] = (value, time.time() + ttl)
+        now = time.time()
+        self.cache[key] = (value, now + ttl)
+        self.clean(now)
 
 
 search_cache = SearchCache()
