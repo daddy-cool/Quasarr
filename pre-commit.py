@@ -15,7 +15,6 @@ def safe_print(msg):
     try:
         print(msg)
     except Exception:
-        print("test")
         print(msg.encode("ascii", errors="replace").decode("ascii"))
 
 
@@ -37,7 +36,6 @@ def git_status_has_changes():
 
 
 def task_format():
-    print("test")
     safe_print("\n🔍 --- 1. FORMATTING & SYNTAX CHECK ---")
 
     # Runs Ruff using the rules defined in pyproject.toml
