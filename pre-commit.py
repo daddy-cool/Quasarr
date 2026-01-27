@@ -15,7 +15,7 @@ def safe_print(msg):
     try:
         print(msg)
     except Exception:
-        print(msg.encode("ascii", errors="replace").decode("ascii"))
+        print(msg.encode("ascii", errors="replace"))
 
 
 def run(cmd, check=True, capture=False, text=True):
