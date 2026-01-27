@@ -35,8 +35,6 @@ def get_search_results(
     season="",
     episode="",
 ):
-    results = []
-
     if imdb_id and not imdb_id.startswith("tt"):
         imdb_id = f"tt{imdb_id}"
 
@@ -161,55 +159,53 @@ def get_search_results(
     info(
         f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time."
     )
-    search_results = search_executor.run_all()
-    results.extend(search_results)
+    results = search_executor.run_all()
     elapsed_time = time.time() - start_time
     info(
         f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
     )
-
-    search_cache.clean()
 
     return results
 
 
 class SearchExecutor:
     def __init__(self):
-        self.searches = {}
+        self.searches = []
 
     def add(self, func, args, kwargs, use_cache=False):
         # create cache key
         key_args = list(args)
-        key_args[1] = 0  # ignore start_time in cache key
+        key_args[1] = None  # ignore start_time in cache key
         key_args = tuple(key_args)
-        key = (func.__name__, key_args, frozenset(kwargs.items()))
+        key = hash((func.__name__, key_args, frozenset(kwargs.items())))
 
-        self.searches[key] = (lambda: func(*args, **kwargs), use_cache)
+        self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
 
     def run_all(self):
         results = []
+        futures = []
+        cache_keys = []
 
         with ThreadPoolExecutor() as executor:
-            futures = []
-            cache_keys = []
-
-            for key, (func, use_cache) in self.searches.items():
-                if use_cache and search_cache.get(key):
-                    results.extend(search_cache.get(key))
-                    continue
+            for key, func, use_cache in self.searches:
+                if use_cache:
+                    cached_result = search_cache.get(key)
+                    if cached_result is not None:
+                        results.extend(cached_result)
+                        continue
 
                 futures.append(executor.submit(func))
                 cache_keys.append(key if use_cache else None)
 
-            for index, future in enumerate(as_completed(futures)):
-                try:
-                    result = future.result()
-                    results.extend(result)
+        for index, future in enumerate(as_completed(futures)):
+            try:
+                result = future.result()
+                results.extend(result)
 
-                    if cache_keys[index]:  # only cache if flag is set
-                        search_cache.set(cache_keys[index], result)
-                except Exception as e:
-                    info(f"An error occurred: {e}")
+                if cache_keys[index]:  # only cache if flag is set
+                    search_cache.set(cache_keys[index], result)
+            except Exception as e:
+                info(f"An error occurred: {e}")
 
         return results
 
@@ -235,7 +231,6 @@ class SearchCache:
     def get(self, key):
         value, expiry = self.cache.get(key, (None, 0))
         if time.time() < expiry:
-            self.set(key, value)  # refresh expiry
             return value
 
         if key in self.cache:
@@ -244,6 +239,7 @@ class SearchCache:
         return None
 
     def set(self, key, value, ttl=300):
+        self.clean()
         self.cache[key] = (value, time.time() + ttl)
 
 
