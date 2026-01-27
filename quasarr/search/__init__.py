@@ -127,7 +127,7 @@ def get_search_results(
         )
         for flag, func in imdb_map:
             if flag:
-                search_executor.add(func, args, kwargs)
+                search_executor.add(func, args, kwargs, True)
 
     elif (
         search_phrase and docs_search
@@ -175,34 +175,37 @@ class SearchExecutor:
     def __init__(self):
         self.searches = {}
 
-    def add(self, func, args, kwargs):
+    def add(self, func, args, kwargs, use_cache=False):
         # create cache key
         key_args = list(args)
         key_args[1] = 0  # ignore start_time in cache key
         key_args = tuple(key_args)
         key = (func.__name__, key_args, frozenset(kwargs.items()))
-        self.searches[key] = lambda: func(*args, **kwargs)
+
+        self.searches[key] = (lambda: func(*args, **kwargs), use_cache)
 
     def run_all(self):
         results = []
-        futures = []
-        keys = []
 
         with ThreadPoolExecutor() as executor:
-            for key, func in self.searches.items():
-                if search_cache.get(key):
+            futures = []
+            cache_keys = []
+
+            for key, (func, use_cache) in self.searches.items():
+                if use_cache and search_cache.get(key):
                     results.extend(search_cache.get(key))
                     continue
 
                 futures.append(executor.submit(func))
-                keys.append(key)
+                cache_keys.append(key if use_cache else None)
 
             for index, future in enumerate(as_completed(futures)):
                 try:
                     result = future.result()
                     results.extend(result)
-                    # cache the results
-                    search_cache.set(keys[index], result)
+
+                    if cache_keys[index]:  # only cache if flag is set
+                        search_cache.set(cache_keys[index], result)
                 except Exception as e:
                     info(f"An error occurred: {e}")
 
@@ -216,6 +219,7 @@ class SearchCache:
     def get(self, key):
         value, expiry = self.cache.get(key, (None, 0))
         if time.time() < expiry:
+            self.set(key, value)  # refresh expiry
             return value
 
         if key in self.cache:
@@ -223,7 +227,7 @@ class SearchCache:
 
         return None
 
-    def set(self, key, value, ttl=60000):
+    def set(self, key, value, ttl=300):
         self.cache[key] = (value, time.time() + ttl)
 
 
