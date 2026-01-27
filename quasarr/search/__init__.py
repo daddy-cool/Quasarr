@@ -158,11 +158,15 @@ def get_search_results(
     else:
         stype = "feed search"
 
-    info(f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time.")
+    info(
+        f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time."
+    )
     search_results = search_executor.run_all()
     results.extend(search_results)
     elapsed_time = time.time() - start_time
-    info(f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds")
+    info(
+        f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
+    )
 
     return results
 
@@ -189,7 +193,7 @@ class SearchExecutor:
                 if search_cache.get(key):
                     results.extend(search_cache.get(key))
                     continue
-                
+
                 futures.append(executor.submit(func))
                 keys.append(key)
 
@@ -204,6 +208,7 @@ class SearchExecutor:
 
         return results
 
+
 class SearchCache:
     def __init__(self):
         self.cache = {}
@@ -215,10 +220,11 @@ class SearchCache:
 
         if key in self.cache:
             del self.cache[key]
-        
+
         return None
 
     def set(self, key, value, ttl=60000):
         self.cache[key] = (value, time.time() + ttl)
+
 
 search_cache = SearchCache()
