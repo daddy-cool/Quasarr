@@ -981,18 +981,19 @@ def is_imdb_id(search_string):
         return None
 
 
+def normalize_optional_int(value):
+    if value is None:
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def match_in_title(title: str, season: int = None, episode: int = None) -> bool:
-    # ensure season/episode are ints (or None)
-    if isinstance(season, str):
-        try:
-            season = int(season)
-        except ValueError:
-            season = None
-    if isinstance(episode, str):
-        try:
-            episode = int(episode)
-        except ValueError:
-            episode = None
+    season = normalize_optional_int(season)
+    episode = normalize_optional_int(episode)
 
     pattern = re.compile(
         r"(?i)(?:\.|^)[sS](\d+)(?:-(\d+))?"  # season or season‑range
