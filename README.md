@@ -22,7 +22,7 @@ installed in your browser.
 
 1. Set up and run [JDownloader 2](https://jdownloader.org/download/index)
 2. Configure the integrations below
-3. (Optional) Set up [FlareSolverr 3](https://github.com/FlareSolverr/FlareSolverr) for sites that require it
+3. (Optional) Set up [flaresolverr-go](https://github.com/Rorqualx/flaresolverr-go) for sites that require it
 
 > **Finding your Quasarr URL and API Key**  
 > Both values are shown in the console output under **API Information**, or in the Quasarr web UI.
@@ -129,6 +129,9 @@ Add Quasarr as a **Generic Newznab Indexer**.
 searches Quasarr, sends selected releases to Quasarr for download, imports completed PDFs from JDownloader folders, and
 serves your library through OPDS.
 
+<details>
+<summary>Configure Magazarr</summary>
+
 Run Magazarr and open `http://127.0.0.1:8090`:
 
 ```bash
@@ -154,6 +157,8 @@ Set these values in Magazarr:
 | Library directory          | `/library`, or wherever Magazarr should store imported PDFs                                      |
 
 Magazarr will import the PDF and clean up the completed package folder.
+
+</details>
 
 ---
 
@@ -320,6 +325,6 @@ docker run -d \
 |------------------------|---------------------------------------------------------------------------------------|
 | `QUASARR_URL`          | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
 | `QUASARR_API_KEY`      | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
-| `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
+| `FLARESOLVERR_URL`     | Local URL of [flaresolverr-go](https://github.com/Rorqualx/flaresolverr-go)           |
 | `APIKEY_2CAPTCHA`      | [2Captcha](https://2captcha.com/?from=27506687) account API key                       |
 | `TZ`                   | Optional. Timezone for SponsorsHelper (e.g., `Europe/Berlin`)                           |

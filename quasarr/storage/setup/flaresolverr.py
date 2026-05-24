@@ -26,7 +26,7 @@ from quasarr.storage.sqlite_database import DataBase
 
 
 def save_flaresolverr_url(shared_state, is_setup=False):
-    """Save FlareSolverr URL from web UI."""
+    """Save flaresolverr-go URL from web UI."""
     url = request.forms.get("url", "").strip()
     config = Config("FlareSolverr")
 
@@ -34,19 +34,19 @@ def save_flaresolverr_url(shared_state, is_setup=False):
         config.save("url", "")
         DataBase("skip_flaresolverr").update_store("skipped", "true")
         shared_state.update("user_agent", FALLBACK_USER_AGENT)
-        info("FlareSolverr URL cleared and setup skipped")
+        info("flaresolverr-go URL cleared and setup skipped")
 
         if is_setup:
             quasarr.providers.web_server.temp_server_success = True
 
-        return render_reconnect_success("FlareSolverr URL cleared.")
+        return render_reconnect_success("flaresolverr-go URL cleared.")
 
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "http://" + url
 
     if not re.search(r"/v\d+$", url):
         return render_fail(
-            "FlareSolverr URL must end with /v1 (or similar version path)."
+            "flaresolverr-go URL must end with /v1 (or similar version path)."
         )
 
     if check_flaresolverr(shared_state, url):
@@ -54,19 +54,19 @@ def save_flaresolverr_url(shared_state, is_setup=False):
         DataBase("skip_flaresolverr").delete("skipped")
 
         info(
-            f'FlareSolverr connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"'
+            f'flaresolverr-go connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"'
         )
-        info(f'FlareSolverr URL configured: "{url}"')
+        info(f'flaresolverr-go URL configured: "{url}"')
 
         if is_setup:
             quasarr.providers.web_server.temp_server_success = True
 
-        return render_reconnect_success("FlareSolverr URL saved successfully!")
-    return render_fail("Could not reach FlareSolverr!")
+        return render_reconnect_success("flaresolverr-go URL saved successfully!")
+    return render_fail("Could not reach flaresolverr-go!")
 
 
 def get_flaresolverr_status_data(shared_state):
-    """Return FlareSolverr configuration status."""
+    """Return flaresolverr-go configuration status."""
     response.content_type = "application/json"
     skip_db = DataBase("skip_flaresolverr")
     is_skipped = bool(skip_db.retrieve("skipped"))
@@ -80,10 +80,10 @@ def get_flaresolverr_status_data(shared_state):
 
 
 def delete_skip_flaresolverr_preference():
-    """Clear skip FlareSolverr preference."""
+    """Clear skip flaresolverr-go preference."""
     response.content_type = "application/json"
     DataBase("skip_flaresolverr").delete("skipped")
-    info("Skip FlareSolverr preference cleared")
+    info("Skip flaresolverr-go preference cleared")
     return {"success": True}
 
 
@@ -96,18 +96,18 @@ def flaresolverr_form_html(shared_state, is_setup=False):
     if is_skipped and not is_setup:
         skip_indicator = """
         <div class="skip-indicator" style="margin-bottom:1rem; padding:0.75rem; background:var(--code-bg, #f8f9fa); border-radius:0.25rem; font-size:0.875rem;">
-            <span style="color:#dc3545;">⚠️ FlareSolverr setup was skipped</span>
+            <span style="color:#dc3545;">⚠️ flaresolverr-go setup was skipped</span>
             <p style="margin:0.5rem 0 0 0; font-size:0.75rem; color:var(--secondary, #6c757d);">
-                Some sites (like AL) won't work until FlareSolverr is configured.
+                Some sites (like AL) won't work until flaresolverr-go is configured.
             </p>
         </div>
         """
 
     form_content = f'''
     {skip_indicator}
-    <span><a href="https://github.com/FlareSolverr/FlareSolverr?tab=readme-ov-file#installation" target="_blank">FlareSolverr</a>
+    <span><a href="https://github.com/Rorqualx/flaresolverr-go?tab=readme-ov-file#docker-recommended" target="_blank">flaresolverr-go</a>
     must be running and reachable to Quasarr for some sites to work.</span><br><br>
-    <label for="url">FlareSolverr URL</label>
+    <label for="url">flaresolverr-go URL</label>
     <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1" value="{current_url}"><br>
     '''
 
@@ -130,7 +130,7 @@ def flaresolverr_form_html(shared_state, is_setup=False):
                 if (response.ok) {
                     window.location.href = '/skip-success';
                 } else {
-                    showModal('Error', 'Failed to skip FlareSolverr setup');
+                    showModal('Error', 'Failed to skip flaresolverr-go setup');
                     formSubmitted = false;
                     if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }
                     if (submitBtn) { submitBtn.disabled = false; }
@@ -204,20 +204,21 @@ def flaresolverr_config(shared_state):
     @app.get("/")
     def url_form():
         return render_form(
-            "Set FlareSolverr URL", flaresolverr_form_html(shared_state, is_setup=True)
+            "Set flaresolverr-go URL",
+            flaresolverr_form_html(shared_state, is_setup=True),
         )
 
     @app.get("/skip-success")
     def skip_success():
         return render_reconnect_success(
-            "FlareSolverr setup skipped. Some sites (like AL) won't work. You can configure it later in the web UI."
+            "flaresolverr-go setup skipped. Some sites (like AL) won't work. You can configure it later in the web UI."
         )
 
     @app.post("/api/flaresolverr/skip")
     def skip_flaresolverr():
         DataBase("skip_flaresolverr").update_store("skipped", "true")
         shared_state.update("user_agent", FALLBACK_USER_AGENT)
-        info("FlareSolverr setup skipped by user choice")
+        info("flaresolverr-go setup skipped by user choice")
         quasarr.providers.web_server.temp_server_success = True
         return {"success": True}
 
@@ -226,10 +227,12 @@ def flaresolverr_config(shared_state):
         return save_flaresolverr_url(shared_state, is_setup=True)
 
     info(
-        '"flaresolverr" URL is required for some sites (like AL). '
+        '"flaresolverr-go" URL is required for some sites (like AL). '
         f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
-    info("Please enter your FlareSolverr URL now, or skip to allow Quasarr to launch!")
+    info(
+        "Please enter your flaresolverr-go URL now, or skip to allow Quasarr to launch!"
+    )
     quasarr.providers.web_server.temp_server_success = False
     return Server(
         app, listen="0.0.0.0", port=shared_state.values["port"]
