@@ -115,6 +115,9 @@ def run():
             sys.exit(1)
 
         shared_state.set_files(config_path)
+        if DataBase.maintain(shared_state.values["dbfile"]) is False:
+            error("Stopping Quasarr because Quasarr.db failed its integrity check.")
+            sys.exit(1)
         Config.prune_unsupported_keys(shared_state.values["configfile"])
         shared_state.update("config", Config)
         shared_state.update("database", DataBase)
