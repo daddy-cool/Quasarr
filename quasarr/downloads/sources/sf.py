@@ -285,7 +285,7 @@ def _resolve_sf_redirect(url, user_agent):
             return None
         visited.add(current_url)
 
-        if detect_crypter_type(current_url) == "filecrypt":
+        if detect_crypter_type(current_url) is not None:
             return current_url
 
         try:
