@@ -4,7 +4,6 @@
 
 import base64
 import json
-import random
 import re
 import xml.dom.minidom
 from urllib.parse import urlparse
@@ -20,6 +19,355 @@ from quasarr.providers.cloudflare import (
     is_cloudflare_challenge,
 )
 from quasarr.providers.log import debug, info
+
+_FILECRYPT_TLDS = ("cc", "to", "co")
+_FLARESOLVERR_GO_URL = "https://github.com/Rorqualx/flaresolverr-go"
+_FILECRYPT_CIRCLE_CAPTCHA_URL = "https://filecrypt.cc/captcha/circle.php"
+
+
+def has_filecrypt_cutcaptcha(html):
+    page = (html or "").lower()
+    return "cutcaptcha" in page or "cap_token" in page
+
+
+def has_filecrypt_circlecaptcha(html):
+    page = html or ""
+    lower_page = page.lower()
+    soup = BeautifulSoup(page, "html.parser")
+
+    circle_container = soup.find(
+        class_=lambda value: (
+            value and "circle" in str(value).lower() and "captcha" in str(value).lower()
+        )
+    )
+    if circle_container:
+        return True
+
+    page_text = soup.get_text(" ", strip=True).lower()
+    return (
+        "captcha/circle.php" in lower_page
+        or "click inside the open circle" in page_text
+        or ("security check" in page_text and "open circle" in page_text)
+    )
+
+
+def _detected_filecrypt_captcha_type(captcha_type, reason):
+    debug(f"Detected Filecrypt CAPTCHA type: {captcha_type} ({reason})")
+    return captcha_type
+
+
+def detect_filecrypt_captcha_type(html):
+    soup = BeautifulSoup(html or "", "html.parser")
+    if soup.find("form", {"class": "cnlform"}):
+        return _detected_filecrypt_captcha_type("none", "cnlform present")
+    if _get_pow_captcha(soup):
+        return _detected_filecrypt_captcha_type("pow", "pow-captcha present")
+    if has_filecrypt_circlecaptcha(html):
+        return _detected_filecrypt_captcha_type(
+            "circle", "circle captcha marker present"
+        )
+    if has_filecrypt_cutcaptcha(html):
+        return _detected_filecrypt_captcha_type(
+            "cutcaptcha", "cutcaptcha marker present"
+        )
+    password_input = soup.find("input", {"id": "p4assw0rt"}) or soup.find(
+        "input",
+        placeholder=lambda value: value and "password" in value.lower(),
+    )
+    if password_input:
+        return _detected_filecrypt_captcha_type("password", "password input present")
+    return _detected_filecrypt_captcha_type("unknown", "no known marker present")
+
+
+def _get_pow_captcha(soup):
+    return soup.find("div", {"id": "pow-captcha", "class": "pow-captcha"})
+
+
+def _filecrypt_url_candidates(url):
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    parts = host.split(".")
+    if len(parts) < 2 or parts[-2] != "filecrypt":
+        return [url]
+
+    original_tld = parts[-1]
+    tlds = [original_tld] + [tld for tld in _FILECRYPT_TLDS if tld != original_tld]
+
+    urls = []
+    for tld in tlds:
+        candidate_host = ".".join([*parts[:-1], tld])
+        netloc = candidate_host
+        if parsed.port:
+            netloc = f"{candidate_host}:{parsed.port}"
+        urls.append(parsed._replace(netloc=netloc).geturl())
+    return urls
+
+
+def _cookies_for_target(session, target_url):
+    domain = urlparse(target_url).hostname or ""
+    cookies = []
+
+    for cookie in session.cookies:
+        cookie_domain = cookie.domain or domain
+        normalized = cookie_domain.lstrip(".")
+        if normalized != domain and not domain.endswith("." + normalized):
+            continue
+
+        cookies.append(
+            {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie_domain,
+                "path": cookie.path or "/",
+            }
+        )
+
+    return cookies
+
+
+def _cookie_dict(cookies):
+    return {cookie.get("name"): cookie.get("value") for cookie in cookies or []}
+
+
+def _flaresolverr_execute_js_get(shared_state, session, url, execute_js, wait=12):
+    flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
+    if not flaresolverr_url:
+        raise RuntimeError("FlareSolverr-Go is required for Filecrypt proof-of-work.")
+
+    last_error = None
+
+    for candidate_url in _filecrypt_url_candidates(url):
+        payload = {
+            "cmd": "request.get",
+            "url": candidate_url,
+            "maxTimeout": DOWNLOAD_REQUEST_TIMEOUT_SECONDS * 1000,
+            "waitInSeconds": wait,
+            "cookies": _cookies_for_target(session, candidate_url),
+            "executeJs": execute_js,
+        }
+
+        response = requests.post(
+            flaresolverr_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS + 10,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        if result.get("status") != "ok" or "solution" not in result:
+            message = result.get("message", "<no message>")
+            last_error = message
+            if "dns rebinding detected" in message.lower():
+                continue
+            raise RuntimeError(f"FlareSolverr-Go failed: {message}")
+
+        solution = result["solution"]
+
+        for cookie in solution.get("cookies", []):
+            session.cookies.set(
+                cookie.get("name"),
+                cookie.get("value"),
+                domain=cookie.get("domain"),
+                path=cookie.get("path", "/"),
+            )
+
+        user_agent = solution.get("userAgent")
+        if user_agent and user_agent != shared_state.values.get("user_agent"):
+            shared_state.update("user_agent", user_agent)
+
+        return {
+            "url": solution.get("url", candidate_url),
+            "html": solution.get("response", ""),
+            "execute_js_result": solution.get("executeJsResult"),
+        }
+
+    raise RuntimeError(f"FlareSolverr-Go failed: {last_error}")
+
+
+def _solve_filecrypt_pow_if_present(shared_state, session, output, headers):
+    soup = BeautifulSoup(output.text, "html.parser")
+    if not _get_pow_captcha(soup):
+        return output
+
+    info("Filecrypt proof-of-work detected. Solving with FlareSolverr-Go executeJs...")
+
+    click_js = """
+    const box = document.querySelector('#pow-captcha .pow-captcha__box');
+    if (!box) {
+        return 'missing';
+    }
+    box.dispatchEvent(new MouseEvent('click', {
+        bubbles: false,
+        cancelable: true,
+        view: window
+    }));
+    return 'clicked';
+    """
+
+    for _ in range(3):
+        result = _flaresolverr_execute_js_get(
+            shared_state,
+            session,
+            output.url,
+            click_js,
+            wait=12,
+        )
+
+        execute_result = result.get("execute_js_result")
+        if execute_result in (None, "", "null"):
+            raise RuntimeError(
+                "Filecrypt proof-of-work requires FlareSolverr-Go executeJs support. "
+                f"Make sure you are using FlareSolverr-Go: {_FLARESOLVERR_GO_URL}"
+            )
+
+        execute_result = str(execute_result)
+        if execute_result.startswith("ERROR:"):
+            raise RuntimeError(
+                "Filecrypt proof-of-work browser click failed: " + execute_result
+            )
+
+        if execute_result != "clicked":
+            info(f"Filecrypt proof-of-work click was not possible: {execute_result}")
+            continue
+
+        refreshed = session.get(
+            result.get("url") or output.url,
+            headers=headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+        refreshed_soup = BeautifulSoup(refreshed.text, "html.parser")
+        if not _get_pow_captcha(refreshed_soup):
+            return refreshed
+
+    info("Filecrypt proof-of-work solve did not finish.")
+    return output
+
+
+def _find_password_field(soup):
+    input_elem = soup.find("input", attrs={"type": "password"})
+    if not input_elem:
+        input_elem = soup.find(
+            "input", placeholder=lambda value: value and "password" in value.lower()
+        )
+    if not input_elem:
+        input_elem = soup.find(
+            "input",
+            attrs={
+                "name": lambda value: (
+                    value and ("pass" in value.lower() or "password" in value.lower())
+                )
+            },
+        )
+    if input_elem and input_elem.has_attr("name"):
+        return input_elem["name"]
+    return None
+
+
+def inspect_filecrypt_captcha(shared_state, url, password=None):
+    session = requests.Session()
+    headers = {"User-Agent": shared_state.values["user_agent"]}
+
+    session, headers, output = ensure_session_cf_bypassed(
+        info,
+        shared_state,
+        session,
+        url,
+        headers,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    )
+    if not session or not output:
+        return {"captcha_type": "unknown", "url": url}
+
+    soup = BeautifulSoup(output.text, "html.parser")
+    password_field = _find_password_field(soup)
+
+    if password and password_field:
+        post_headers = {
+            "User-Agent": shared_state.values["user_agent"],
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        output = session.post(
+            output.url,
+            data={password_field: password},
+            headers=post_headers,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+
+        if output.status_code == 403 or is_cloudflare_challenge(output.text):
+            session, headers, output = ensure_session_cf_bypassed(
+                info,
+                shared_state,
+                session,
+                output.url,
+                headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
+            if not session or not output:
+                return {"captcha_type": "unknown", "url": url}
+
+    captcha_type = detect_filecrypt_captcha_type(output.text)
+    debug(f"Filecrypt challenge inspection result for {output.url}: {captcha_type}")
+    return {
+        "captcha_type": captcha_type,
+        "url": output.url,
+    }
+
+
+def prepare_filecrypt_circle_captcha(shared_state, url, password=None):
+    session = requests.Session()
+    headers = {"User-Agent": shared_state.values["user_agent"]}
+
+    session, headers, output = ensure_session_cf_bypassed(
+        info,
+        shared_state,
+        session,
+        url,
+        headers,
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    )
+    if not session or not output:
+        raise RuntimeError("Could not load Filecrypt Circle-Captcha page.")
+
+    soup = BeautifulSoup(output.text, "html.parser")
+    password_field = _find_password_field(soup)
+    if password and password_field:
+        output = session.post(
+            output.url,
+            data={password_field: password},
+            headers={
+                "User-Agent": shared_state.values["user_agent"],
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    if detect_filecrypt_captcha_type(output.text) != "circle":
+        raise RuntimeError("Filecrypt Circle-Captcha is no longer present.")
+
+    parsed_url = urlparse(output.url)
+    if parsed_url.hostname:
+        session.cookies.set("a", "1", domain=parsed_url.hostname, path="/")
+
+    cookies = _cookies_for_target(session, output.url)
+    captcha = requests.get(
+        _FILECRYPT_CIRCLE_CAPTCHA_URL,
+        headers={
+            **headers,
+            "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+            "Referer": output.url,
+        },
+        cookies=_cookie_dict(cookies),
+        timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    )
+    captcha.raise_for_status()
+
+    return {
+        "url": output.url,
+        "cookies": cookies,
+        "image": captcha.content,
+        "content_type": captcha.headers.get("Content-Type", "image/png"),
+    }
 
 
 class CNL:
@@ -171,10 +519,30 @@ class DLC:
         return all_urls
 
 
-def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=None):
+def _apply_cookie_list(session, cookies):
+    for cookie in cookies or []:
+        session.cookies.set(
+            cookie.get("name"),
+            cookie.get("value"),
+            domain=cookie.get("domain"),
+            path=cookie.get("path", "/"),
+        )
+
+
+def get_filecrypt_links(
+    shared_state,
+    token,
+    title,
+    url,
+    password=None,
+    mirrors=None,
+    cookies=None,
+    circle_solution=None,
+):
     info("Attempting to decrypt Filecrypt link: " + url)
     debug("Initializing Filecrypt session & headers.")
     session = requests.Session()
+    _apply_cookie_list(session, cookies)
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     debug("Ensuring Cloudflare bypass is ready.")
@@ -196,22 +564,8 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
     password_field = None
     try:
         debug("Attempting password field auto-detection.")
-        input_elem = soup.find("input", attrs={"type": "password"})
-        if not input_elem:
-            input_elem = soup.find(
-                "input", placeholder=lambda v: v and "password" in v.lower()
-            )
-        if not input_elem:
-            input_elem = soup.find(
-                "input",
-                attrs={
-                    "name": lambda v: (
-                        v and ("pass" in v.lower() or "password" in v.lower())
-                    )
-                },
-            )
-        if input_elem and input_elem.has_attr("name"):
-            password_field = input_elem["name"]
+        password_field = _find_password_field(soup)
+        if password_field:
             info("Password field name identified: " + password_field)
             debug(f"Password field detected: {password_field}")
     except Exception as e:
@@ -264,32 +618,59 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
         debug("Incorrect password detected via p4assw0rt.")
         return False
 
+    output = _solve_filecrypt_pow_if_present(shared_state, session, output, headers)
+    url = output.url
+    soup = BeautifulSoup(output.text, "html.parser")
+
+    if _get_pow_captcha(soup):
+        info("Filecrypt proof-of-work still present after browser solve.")
+        return False
+
+    if detect_filecrypt_captcha_type(output.text) == "circle":
+        if not circle_solution:
+            info("Filecrypt Circle-Captcha required.")
+            return {
+                "status": "circle_required",
+                "url": output.url,
+            }
+
+        x, y = circle_solution
+        info(f"Submitting Filecrypt Circle-Captcha click at x={x}, y={y}.")
+        parsed_url = urlparse(output.url)
+        output = session.post(
+            output.url,
+            data={"button.x": x, "button.y": y},
+            headers={
+                "User-Agent": shared_state.values["user_agent"],
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": f"{parsed_url.scheme}://{parsed_url.netloc}",
+                "Referer": output.url,
+            },
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
+        url = output.url
+        soup = BeautifulSoup(output.text, "html.parser")
+
+        if detect_filecrypt_captcha_type(output.text) == "circle":
+            info("Filecrypt Circle-Captcha was rejected.")
+            return False
+
+    if not token and detect_filecrypt_captcha_type(output.text) == "cutcaptcha":
+        info("Filecrypt CutCaptcha required after proof-of-work.")
+        return {"status": "captcha_required"}
+
     no_captcha_present = bool(soup.find("form", {"class": "cnlform"}))
     if no_captcha_present:
         info("No CAPTCHA present. Skipping token!")
         debug("Detected no CAPTCHA (CNL direct form).")
     else:
-        circle_captcha = bool(soup.find_all("div", {"class": "circle_captcha"}))
+        circle_captcha = has_filecrypt_circlecaptcha(output.text)
         debug(f"Circle captcha present: {circle_captcha}")
-        i = 0
-        while circle_captcha and i < 3:
-            debug(f"Submitting fake circle captcha click attempt {i + 1}.")
-            random_x = str(random.randint(100, 200))
-            random_y = str(random.randint(100, 200))
-            output = session.post(
-                url,
-                data="buttonx.x=" + random_x + "&buttonx.y=" + random_y,
-                headers={
-                    "User-Agent": shared_state.values["user_agent"],
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-            )
-            url = output.url
-            soup = BeautifulSoup(output.text, "html.parser")
-            circle_captcha = bool(soup.find_all("div", {"class": "circle_captcha"}))
-            i += 1
-            debug(f"Circle captcha still present: {circle_captcha}")
+        if circle_captcha:
+            return {
+                "status": "circle_required",
+                "url": output.url,
+            }
 
         debug("Submitting final CAPTCHA token.")
         output = session.post(
@@ -311,6 +692,13 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=
 
     soup = BeautifulSoup(output.text, "html.parser")
     debug("Parsed post-captcha response HTML.")
+
+    if detect_filecrypt_captcha_type(output.text) == "circle":
+        info("Filecrypt Circle-Captcha required after CutCaptcha.")
+        return {
+            "status": "circle_required",
+            "url": output.url,
+        }
 
     solved = bool(soup.find_all("div", {"class": "container"}))
     if not solved:

@@ -4,16 +4,23 @@
 
 import json
 import re
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+from base64 import b64encode, urlsafe_b64decode, urlsafe_b64encode
+from io import BytesIO
 from urllib.parse import quote, unquote
 
 import requests
 from bottle import HTTPResponse, redirect, request, response
+from PIL import Image
 
 import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads import submit_final_download_urls
-from quasarr.downloads.linkcrypters.filecrypt import DLC, get_filecrypt_links
+from quasarr.downloads.linkcrypters.filecrypt import (
+    DLC,
+    get_filecrypt_links,
+    inspect_filecrypt_captcha,
+    prepare_filecrypt_circle_captcha,
+)
 from quasarr.downloads.packages import delete_package
 from quasarr.providers import obfuscated, shared_state
 from quasarr.providers.auth import public_endpoint
@@ -39,7 +46,7 @@ def check_package_exists(package_id):
                 <h1><img src="{images.logo}" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Package not found or already solved.</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>
             '''),
             content_type="text/html",
@@ -151,6 +158,14 @@ def setup_captcha_routes(app):
                 )
                 for link in prioritized_links
             )
+            has_filecrypt_links = any(
+                (
+                    "filecrypt." in link[0]
+                    if isinstance(link, (list, tuple))
+                    else "filecrypt." in link
+                )
+                for link in prioritized_links
+            )
 
             if has_hide_links:
                 debug("Redirecting to Hide page")
@@ -164,6 +179,9 @@ def setup_captcha_routes(app):
             elif has_tolink_links:
                 debug("Redirecting to ToLink CAPTCHA")
                 redirect(f"/captcha/tolink?data={quote(encoded_payload)}")
+            elif has_filecrypt_links:
+                debug("Redirecting to FileCrypt challenge page")
+                redirect(f"/captcha/filecrypt?data={quote(encoded_payload)}")
             else:
                 debug("Redirecting to cutcaptcha")
                 redirect(f"/captcha/cutcaptcha?data={quote(encoded_payload)}")
@@ -750,6 +768,10 @@ def setup_captcha_routes(app):
                 ("tolink." in (l[0] if isinstance(l, (list, tuple)) else l))
                 for l in links
             )
+            has_filecrypt = any(
+                ("filecrypt." in (l[0] if isinstance(l, (list, tuple)) else l))
+                for l in links
+            )
 
             if has_hide:
                 return "hide"
@@ -759,6 +781,8 @@ def setup_captcha_routes(app):
                 return "keeplinks"
             elif has_tolink:
                 return "tolink"
+            elif has_filecrypt:
+                return "filecrypt"
             else:
                 return "cutcaptcha"
 
@@ -903,7 +927,7 @@ def setup_captcha_routes(app):
             </script>
         """
 
-    @app.get("/captcha/filecrypt")
+    @app.get("/captcha/filecrypt/manual")
     def serve_filecrypt_fallback():
         """Dedicated FileCrypt fallback page - similar to hide/junkies/keeplinks/tolink"""
         payload = decode_payload()
@@ -939,6 +963,12 @@ def setup_captcha_routes(app):
 
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id, title=title)
+        unknown_warning = """
+            <div id="filecrypt-unknown-warning" style="max-width: 370px; margin: 0 auto 20px auto; padding: 14px; background: rgba(220, 53, 69, 0.14); border: 2px solid #dc3545; border-radius: 8px; color: #b02a37;">
+                <p style="margin: 0;"><b>FileCrypt challenge not recognized.</b></p>
+                <p style="margin: 8px 0 0 0;">Quasarr could not match this page to CutCaptcha, Circle-Captcha, proof-of-work, or a no-CAPTCHA link page. Use the FileCrypt userscript flow below.</p>
+            </div>
+        """
 
         source_button = ""
         if original_url:
@@ -956,6 +986,7 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
+            {unknown_warning}
 
             <div>
                 <!-- Primary action button -->
@@ -1095,7 +1126,7 @@ def setup_captcha_routes(app):
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Missing parameters</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
             # Decode the compressed links using urlsafe_b64decode
@@ -1111,7 +1142,7 @@ def setup_captcha_routes(app):
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Failed to decode data: {str(e)}</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
             # Decompress using zlib - use raw deflate format (no header)
@@ -1129,7 +1160,7 @@ def setup_captcha_routes(app):
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decompress data: {str(e)}</p>
                     <p>
-                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                        {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                     </p>''')
 
             links_text = decompressed.decode("utf-8")
@@ -1154,7 +1185,7 @@ def setup_captcha_routes(app):
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Package not found</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
             data = json.loads(raw_data)
@@ -1212,7 +1243,7 @@ def setup_captcha_routes(app):
                     <p><b>Package marked as failed.</b></p>
                     <p>{submit_result["reason"]}</p>
                     <p>
-                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                        {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                     </p>''')
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Failed to submit package to JDownloader</p>
@@ -1225,7 +1256,7 @@ def setup_captcha_routes(app):
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Error:</b> {str(e)}</p>
             <p>
-                {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>''')
 
     @app.get("/captcha/delete/<package_id>")
@@ -1268,9 +1299,286 @@ def setup_captcha_routes(app):
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>''')
 
-    # The following routes are for cutcaptcha
+    # The following routes are for FileCrypt challenge handling
+    @app.get("/captcha/cutcaptcha-loader.js")
+    def serve_cutcaptcha_loader_js():
+        response.content_type = "application/javascript"
+        return obfuscated.cutcaptcha_custom_js()
+
+    @app.post("/captcha/filecrypt-status")
+    def check_filecrypt_status():
+        data = request.json or {}
+        link = data.get("link")
+        password = data.get("password")
+
+        if not link:
+            response.status = 400
+            return {"captcha_type": "unknown", "error": "Missing link"}
+
+        try:
+            status = inspect_filecrypt_captcha(shared_state, link, password=password)
+            return status
+        except Exception as e:
+            info(f"Error checking Filecrypt challenge: {e}")
+            response.status = 500
+            return {"captcha_type": "unknown", "error": str(e)}
+
+    @app.get("/captcha/circle")
+    def serve_circle_captcha():
+        package_id = request.query.get("package_id")
+        url = request.query.get("url")
+
+        if not package_id or not url:
+            response.status = 400
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> Missing Circle-Captcha parameters.</p>
+            <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>''')
+
+        check_package_exists(package_id)
+        package_data = json.loads(shared_state.get_db("protected").retrieve(package_id))
+        title = package_data.get("title", "Unknown Package")
+        password = package_data.get("password", "")
+        links = package_data.get("links", [])
+        desired_mirror = package_data.get("mirror")
+        original_url = package_data.get("original_url")
+
+        try:
+            circle = prepare_filecrypt_circle_captcha(
+                shared_state,
+                url,
+                password=password,
+            )
+        except Exception as e:
+            info(f"Error preparing Filecrypt Circle-Captcha: {e}")
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> Could not load Filecrypt Circle-Captcha.</p>
+            <p>{render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}</p>''')
+
+        image_data = b64encode(circle["image"]).decode("ascii")
+        with Image.open(BytesIO(circle["image"])) as captcha_image:
+            image_width, image_height = captcha_image.size
+
+        cookies_payload = urlsafe_b64encode(
+            json.dumps(circle["cookies"]).encode()
+        ).decode()
+        package_selector = render_package_selector(package_id, title)
+        failed_warning = render_failed_attempts_warning(
+            package_id,
+            title=title,
+            include_delete_button=False,
+        )
+
+        link_options = ""
+        filecrypt_links = [
+            link
+            for link in links
+            if "filecrypt." in (link[0] if isinstance(link, (list, tuple)) else link)
+        ]
+        if len(filecrypt_links) > 1:
+            for link in filecrypt_links:
+                link_url = link[0] if isinstance(link, (list, tuple)) else link
+                link_label = (
+                    link[1] if isinstance(link, (list, tuple)) and len(link) > 1 else ""
+                )
+                prioritized = [link] + [other for other in links if other != link]
+                mirror_payload = {
+                    "package_id": package_id,
+                    "title": title,
+                    "password": password,
+                    "mirror": desired_mirror,
+                    "links": prioritized,
+                    "original_url": original_url,
+                }
+                encoded = urlsafe_b64encode(
+                    json.dumps(mirror_payload).encode()
+                ).decode()
+                selected = "selected" if link_url == url else ""
+                link_options += (
+                    f'<option value="{quote(encoded)}" {selected}>{link_label}</option>'
+                )
+
+            link_select = f"""<div id="mirrors-select">
+                    <label for="link-select">Mirror:</label>
+                    <select id="link-select">
+                        {link_options}
+                    </select>
+                </div>
+                <script>
+                    document.getElementById("link-select").addEventListener("change", function() {{
+                        window.location.href = '/captcha/filecrypt?data=' + this.value;
+                    }});
+                </script>
+            """
+        elif filecrypt_links:
+            first_link = filecrypt_links[0]
+            link_label = (
+                first_link[1]
+                if isinstance(first_link, (list, tuple)) and len(first_link) > 1
+                else "filecrypt"
+            )
+            link_select = f'<div id="mirrors-select">Mirror: <b>{link_label}</b></div>'
+        else:
+            link_select = ""
+
+        source_button = ""
+        if original_url:
+            source_button = f"<p>{render_button('Source', 'secondary', {'onclick': f"window.open('{js_single_quoted_string_safe(original_url)}', '_blank')"})}</p>"
+        bypass_section = render_filecrypt_bypass_section(
+            circle["url"],
+            package_id,
+            title,
+            password,
+        )
+
+        return render_centered_html(f"""
+            <style>
+                .circle-captcha-scroll {{
+                    overflow-x: auto;
+                    max-width: 100%;
+                    margin: 16px auto;
+                    text-align: center;
+                }}
+                .circle-captcha-image {{
+                    display: block;
+                    width: {image_width}px !important;
+                    height: {image_height}px !important;
+                    max-width: none !important;
+                    margin: 0 auto !important;
+                    padding: 0 !important;
+                    border: 0 !important;
+                    border-radius: 0 !important;
+                    background: transparent !important;
+                    cursor: crosshair;
+                }}
+            </style>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
+            {link_select}<br><br>
+            <form id="circle-captcha-form" action="/captcha/decrypt-filecrypt-circle" method="post" onsubmit="if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();">
+              <input type="hidden" name="package_id" value="{package_id}" />
+              <input type="hidden" name="url" value="{circle["url"]}" />
+              <input type="hidden" name="cookies" value="{cookies_payload}" />
+              <input type="hidden" id="circle-x" name="button.x" value="" />
+              <input type="hidden" id="circle-y" name="button.y" value="" />
+              <div class="circle-captcha-scroll">
+                <img
+                    id="circle-captcha-image"
+                    class="circle-captcha-image"
+                    src="data:{circle["content_type"]};base64,{image_data}"
+                    alt="Circle CAPTCHA"
+                    width="{image_width}"
+                    height="{image_height}"
+                    data-width="{image_width}"
+                    data-height="{image_height}"
+                />
+              </div>
+            </form>
+            {source_button}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+            <div id="bypass-section">
+                {bypass_section}
+            </div>
+            <script>
+                document.getElementById('circle-captcha-image').addEventListener('click', function(event) {{
+                    const rect = this.getBoundingClientRect();
+                    const naturalWidth = Number(this.dataset.width);
+                    const naturalHeight = Number(this.dataset.height);
+                    const x = Math.round((event.clientX - rect.left) * naturalWidth / rect.width);
+                    const y = Math.round((event.clientY - rect.top) * naturalHeight / rect.height);
+                    document.getElementById('circle-x').value = String(x);
+                    document.getElementById('circle-y').value = String(y);
+                    document.getElementById('circle-captcha-form').submit();
+                }});
+            </script>
+        """)
+
+    @app.post("/captcha/decrypt-filecrypt-circle")
+    def submit_circle_captcha():
+        package_id = request.forms.get("package_id")
+        url = request.forms.get("url")
+        cookies_payload = request.forms.get("cookies")
+        x = request.forms.get("buttonx.x") or request.forms.get("button.x")
+        y = request.forms.get("buttonx.y") or request.forms.get("button.y")
+
+        if not package_id or not url or not cookies_payload or not x or not y:
+            response.status = 400
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> Missing Circle-Captcha solution data.</p>
+            <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>''')
+
+        check_package_exists(package_id)
+        package_data = json.loads(shared_state.get_db("protected").retrieve(package_id))
+        title = package_data.get("title", "Unknown Package")
+        password = package_data.get("password", "")
+        category = get_download_category_from_package_id(package_id)
+        mirrors = get_download_category_mirrors(category, lowercase=True)
+
+        try:
+            cookies = json.loads(urlsafe_b64decode(unquote(cookies_payload)).decode())
+            decrypted = get_filecrypt_links(
+                shared_state,
+                "",
+                title,
+                url,
+                password=password,
+                mirrors=mirrors,
+                cookies=cookies,
+                circle_solution=(x, y),
+            )
+            links = decrypted.get("links", []) if decrypted else []
+            if not links:
+                raise ValueError("No download links found after Circle-Captcha")
+
+            submit_result = submit_final_download_urls(
+                shared_state,
+                links,
+                title,
+                password,
+                package_id,
+                remove_protected=True,
+            )
+            if not submit_result["success"]:
+                raise RuntimeError(
+                    submit_result.get("reason") or "Submitting Download failed"
+                )
+
+            final_links = submit_result["links"]
+            StatsHelper(shared_state).increment_package_with_links(final_links)
+            StatsHelper(shared_state).increment_captcha_decryptions_manual()
+
+            remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
+            solve_button = (
+                render_button(
+                    "Solve another CAPTCHA",
+                    "primary",
+                    {"onclick": "location.href='/captcha'"},
+                )
+                if remaining_protected
+                else "<b>No more CAPTCHAs</b>"
+            )
+
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Success!</b> Package "{title}" solved and submitted to JDownloader.</p>
+            <p>{len(final_links)} link(s) processed.</p>
+            <p>{solve_button}</p>
+            <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
+            <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
+        except Exception as e:
+            info(f"Error decrypting Filecrypt Circle-Captcha: {e}")
+            StatsHelper(shared_state).increment_failed_decryptions_manual()
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> Circle-Captcha failed. Please try again.</p>
+            <p>{render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}</p>''')
+
+    @app.get("/captcha/filecrypt")
     @app.get("/captcha/cutcaptcha")
-    def serve_cutcaptcha():
+    def serve_filecrypt_challenge_page():
         payload = decode_payload()
 
         if "error" in payload:
@@ -1303,6 +1611,15 @@ def setup_captcha_routes(app):
                 </p>
             ''')
 
+        has_filecrypt_links = any(
+            (
+                "filecrypt." in link[0]
+                if isinstance(link, (list, tuple))
+                else "filecrypt." in link
+            )
+            for link in prioritized_links
+        )
+
         link_options = ""
         if len(prioritized_links) > 1:
             for link in prioritized_links:
@@ -1318,6 +1635,12 @@ def setup_captcha_routes(app):
                     document.getElementById("link-select").addEventListener("change", function() {{
                         var selectedLink = this.value;
                         document.getElementById("link-hidden").value = selectedLink;
+                        var status = document.getElementById("filecrypt-status");
+                        if (status && window.checkFilecryptChallenge) {{
+                            status.style.display = "block";
+                            status.innerHTML = '<div class="filecrypt-skeleton" aria-label="Checking FileCrypt challenge"><div class="filecrypt-skeleton-line long"></div><div class="filecrypt-skeleton-line short"></div></div>';
+                            window.checkFilecryptChallenge();
+                        }}
                     }});
                 </script>
             """
@@ -1354,7 +1677,9 @@ def setup_captcha_routes(app):
         fallback_encoded = urlsafe_b64encode(
             json.dumps(fallback_payload).encode()
         ).decode()
-        filecrypt_fallback_url = f"/captcha/filecrypt?data={quote(fallback_encoded)}"
+        filecrypt_fallback_url = (
+            f"/captcha/filecrypt/manual?data={quote(fallback_encoded)}"
+        )
 
         failed_warning = render_failed_attempts_warning(
             package_id,
@@ -1375,6 +1700,20 @@ def setup_captcha_routes(app):
         if original_url:
             source_button_html = f"<p>{render_button('Source', 'secondary', {'onclick': f"window.open('{js_single_quoted_string_safe(original_url)}', '_blank')"})}</p>"
 
+        pow_button_html = render_button(
+            "Bypass Proof-of-Work",
+            "primary",
+            {"onclick": "decryptFilecryptWithoutToken('Bypassing proof-of-work...')"},
+        )
+        decrypt_button_html = render_button(
+            "Decrypt FileCrypt",
+            "primary",
+            {"onclick": "decryptFilecryptWithoutToken('Decrypting links...')"},
+        )
+        initial_loader = (
+            "checkFilecryptChallenge" if has_filecrypt_links else "loadCutCaptcha"
+        )
+
         content = render_centered_html(
             r'''
             <style>
@@ -1389,6 +1728,28 @@ def setup_captcha_routes(app):
                 #puzzle-captcha iframe {
                     display: block;
                 }
+                .filecrypt-skeleton {
+                    max-width: 370px;
+                    margin: 0 auto 28px auto;
+                }
+                .filecrypt-skeleton-line {
+                    height: 18px;
+                    border-radius: 6px;
+                    margin: 10px auto;
+                    background: linear-gradient(90deg, rgba(128,128,128,0.18), rgba(128,128,128,0.32), rgba(128,128,128,0.18));
+                    background-size: 200% 100%;
+                    animation: filecryptSkeleton 1.1s ease-in-out infinite;
+                }
+                .filecrypt-skeleton-line.short {
+                    width: 55%;
+                }
+                .filecrypt-skeleton-line.long {
+                    width: 82%;
+                }
+                @keyframes filecryptSkeleton {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                }
             </style>
             <script type="text/javascript">
                 // Package title for result display
@@ -1396,17 +1757,18 @@ def setup_captcha_routes(app):
             + escaped_title_js
             + r"""";
 
-                // Check if we should redirect to fallback due to failed attempts
+                // Keep warning visible after repeated failures, but still detect
+                // FileCrypt's current challenge type before falling back manually.
                 (function() {
                     const storageKey = 'captcha_attempts_"""
             + package_id
             + r"""';
                     const attempts = parseInt(localStorage.getItem(storageKey) || '0', 10);
-                    if (attempts >= 2) {
-                        // Redirect to FileCrypt fallback page
-                        window.location.href = """
-            " + filecrypt_fallback_url + r"
-            ''';
+                    const autoFallbackRedirect = false;
+                    if (autoFallbackRedirect && attempts >= 2) {
+                        window.location.href = '"""
+            + js_single_quoted_string_safe(filecrypt_fallback_url)
+            + r'''';
                         return;
                     }
                 })();
@@ -1424,20 +1786,30 @@ def setup_captcha_routes(app):
             + back_button_html
             + r"""</p>`;
 
-                function handleToken(token) {
-                    document.getElementById("puzzle-captcha").remove();
-                    document.getElementById("mirrors-select").remove();
-                    document.getElementById("delete-package-section").style.display = "none";
-                    document.getElementById("back-button-section").style.display = "none";
-                    document.getElementById("bypass-section").style.display = "none";
-                    // Hide package selector and warning on token submission
+                function hideFilecryptControls() {
+                    var puzzleCaptcha = document.getElementById("puzzle-captcha");
+                    if (puzzleCaptcha) puzzleCaptcha.style.display = "none";
+                    var mirrorsSelect = document.getElementById("mirrors-select");
+                    if (mirrorsSelect) mirrorsSelect.style.display = "none";
+                    var deletePackageSection = document.getElementById("delete-package-section");
+                    if (deletePackageSection) deletePackageSection.style.display = "none";
+                    var backButtonSection = document.getElementById("back-button-section");
+                    if (backButtonSection) backButtonSection.style.display = "none";
+                    var bypassSection = document.getElementById("bypass-section");
+                    if (bypassSection) bypassSection.style.display = "none";
+                    var statusSection = document.getElementById("filecrypt-status");
+                    if (statusSection) statusSection.style.display = "none";
+                    var captchaContainer = document.getElementById("captcha-container");
+                    if (captchaContainer) captchaContainer.style.display = "none";
                     var pkgSelector = document.getElementById("package-selector-section");
                     if (pkgSelector) pkgSelector.style.display = "none";
                     var warnBox = document.getElementById("failed-attempts-warning");
                     if (warnBox) warnBox.style.display = "none";
+                }
 
-                    // Add package title to result area
-                    document.getElementById("captcha-key").innerHTML = '<p style="word-break: break-all;"><b>Package:</b> ' + packageTitleText + '</p><p style="word-break: break-all;">Using result "' + token + '" to decrypt links...</p>';
+                function submitFilecryptToken(token, statusText) {
+                    hideFilecryptControls();
+                    document.getElementById("captcha-key").innerHTML = '<p style="word-break: break-all;"><b>Package:</b> ' + packageTitleText + '</p><p style="word-break: break-all;">' + statusText + '</p>';
                     var link = document.getElementById("link-hidden").value;
                     const fullPath = '/captcha/decrypt-filecrypt';
 
@@ -1452,13 +1824,24 @@ def setup_captcha_routes(app):
             + f"""package_id: '{package_id}',
                             title: '{js_single_quoted_string_safe(title)}',
                             link: link,
-                            password: '{password}',
-                            mirror: '{desired_mirror}',
+                            password: '{js_single_quoted_string_safe(password or "")}',
+                            mirror: '{js_single_quoted_string_safe(desired_mirror or "")}',
                         """
             + """})
                     })
                     .then(response => response.json())
                     .then(data => {
+                        if (data.action === 'captcha_required') {
+                            document.getElementById("captcha-key").innerHTML = '<p style="word-break: break-all;"><b>Package:</b> ' + packageTitleText + '</p><p style="word-break: break-all;">Proof-of-work cleared. Solve CutCaptcha to decrypt links.</p>';
+                            var puzzleCaptcha = document.getElementById("puzzle-captcha");
+                            if (puzzleCaptcha) puzzleCaptcha.style.display = "block";
+                            loadCutCaptcha();
+                            return;
+                        }
+                        if (data.action === 'circle_required') {
+                            redirectToCircleCaptcha(data);
+                            return;
+                        }
                         if (data.success) {
                             document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
                                 '<p>✅ Successful!</p>');
@@ -1485,8 +1868,88 @@ def setup_captcha_routes(app):
                         reloadSection.style.display = "block";
                     });
                 }
+
+                function handleToken(token) {
+                    submitFilecryptToken(token, 'Using result "' + token + '" to decrypt links...');
+                }
+
+                function decryptFilecryptWithoutToken(statusText) {
+                    submitFilecryptToken('', statusText);
+                }
+
+                function loadCutCaptcha() {
+                    document.getElementById("filecrypt-status").style.display = "none";
+                    document.getElementById("captcha-container").style.display = "inline-block";
+                    var script = document.createElement('script');
+                    script.src = '/captcha/cutcaptcha-loader.js';
+                    document.body.appendChild(script);
+                }
+
+                function showFilecryptAction(html, text) {
+                    const status = document.getElementById("filecrypt-status");
+                    status.innerHTML = '<p style="word-break: break-all;">' + text + '</p><p>' + html + '</p>';
+                }
+
+                function redirectToFilecryptUserscript() {
+                    window.location.href = '"""
+            + filecrypt_fallback_url
+            + r"""';
+                }
+
+                function redirectToCircleCaptcha(data) {
+                    const circleUrl = data.url || document.getElementById("link-hidden").value;
+                    window.location.href = '/captcha/circle?package_id="""
+            + quote(package_id)
+            + r"""&url=' + encodeURIComponent(circleUrl);
+                }
+
+                function checkFilecryptChallenge() {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 20000);
+                    fetch('/captcha/filecrypt-status', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            link: document.getElementById("link-hidden").value,
+                            password: '"""
+            + js_single_quoted_string_safe(password or "")
+            + r"""'
+                        })
+                    })
+                    .finally(() => clearTimeout(timeoutId))
+                    .then(response => response.json())
+                    .then(data => {
+                        const captchaType = data.captcha_type || 'unknown';
+                        if (captchaType === 'cutcaptcha') {
+                            loadCutCaptcha();
+                        } else if (captchaType === 'pow') {
+                            showFilecryptAction(`"""
+            + pow_button_html
+            + r"""`, 'FileCrypt proof-of-work is present.');
+                        } else if (captchaType === 'none') {
+                            showFilecryptAction(`"""
+            + decrypt_button_html
+            + r"""`, 'FileCrypt links are available without CAPTCHA.');
+                        } else if (captchaType === 'circle') {
+                            redirectToCircleCaptcha(data);
+                        } else {
+                            redirectToFilecryptUserscript();
+                        }
+                    })
+                    .catch(() => redirectToFilecryptUserscript());
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', """
+            + initial_loader
+            + r""");
+                } else {
+                    """
+            + initial_loader
+            + r"""();
+                }
                 """
-            + obfuscated.cutcaptcha_custom_js()
             + f'''</script>
                 <div>
                     <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
@@ -1497,7 +1960,13 @@ def setup_captcha_routes(app):
                     <div id="captcha-key"></div>
                     {link_select}<br><br>
                     <input type="hidden" id="link-hidden" value="{prioritized_links[0][0]}" />
-                    <div class="captcha-container">
+                    <div id="filecrypt-status">
+                        <div class="filecrypt-skeleton" aria-label="Checking FileCrypt challenge">
+                            <div class="filecrypt-skeleton-line long"></div>
+                            <div class="filecrypt-skeleton-line short"></div>
+                        </div>
+                    </div>
+                    <div class="captcha-container" id="captcha-container" style="display: none;">
                         <div id="puzzle-captcha" aria-style="mobile">
                             <strong>Your adblocker prevents the captcha from loading. Disable it!</strong>
                         </div>
@@ -1623,7 +2092,7 @@ def setup_captcha_routes(app):
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Missing package information.</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
             check_package_exists(package_id)
@@ -1661,13 +2130,13 @@ def setup_captcha_routes(app):
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decrypt DLC file: {str(e)}</p>
                     <p>
-                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                        {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                     </p>''')
             else:
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Please provide either links or a DLC file.</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
             # Download the package
@@ -1719,7 +2188,7 @@ def setup_captcha_routes(app):
                         <p><b>Package marked as failed.</b></p>
                         <p>{submit_result["reason"]}</p>
                         <p>
-                            {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                            {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                         </p>''')
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to submit package to JDownloader.</p>
@@ -1730,7 +2199,7 @@ def setup_captcha_routes(app):
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> No valid links found.</p>
                 <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
                 </p>''')
 
         except Exception as e:
@@ -1738,7 +2207,7 @@ def setup_captcha_routes(app):
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Error:</b> {str(e)}</p>
             <p>
-                {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>''')
 
     @app.post("/captcha/decrypt-filecrypt")
@@ -1763,7 +2232,7 @@ def setup_captcha_routes(app):
             category = get_download_category_from_package_id(package_id)
             mirrors = get_download_category_mirrors(category, lowercase=True)
 
-            if token:
+            if token is not None:
                 info(
                     f"Received token: <green>{token}</green> to decrypt links for <y>{title}</y>"
                 )
@@ -1775,6 +2244,27 @@ def setup_captcha_routes(app):
                     password=password,
                     mirrors=mirrors,
                 )
+                if (
+                    isinstance(decrypted, dict)
+                    and decrypted.get("status") == "captcha_required"
+                ):
+                    return {
+                        "success": False,
+                        "action": "captcha_required",
+                        "title": title,
+                        "has_more_captchas": True,
+                    }
+                if (
+                    isinstance(decrypted, dict)
+                    and decrypted.get("status") == "circle_required"
+                ):
+                    return {
+                        "success": False,
+                        "action": "circle_required",
+                        "url": decrypted.get("url") or link,
+                        "title": title,
+                        "has_more_captchas": True,
+                    }
                 if decrypted:
                     links = decrypted.get("links", [])
                     info(f"Decrypted <g>{len(links)}</g> download links for {title}")
