@@ -23,7 +23,11 @@ from quasarr.providers.log import info
 from quasarr.providers.shared_state import extract_valid_hostname
 from quasarr.providers.utils import extract_allowed_keys, extract_kv_pairs
 from quasarr.providers.web_server import Server
-from quasarr.search.sources.helpers import get_login_required_hostnames
+from quasarr.search.sources.helpers import (
+    get_login_required_hostnames,
+    get_radarr_required_hostnames,
+    get_sonarr_required_hostnames,
+)
 from quasarr.storage.config import Config
 from quasarr.storage.setup.common import (
     add_no_cache_headers,
@@ -70,6 +74,22 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
     skip_login_db = DataBase("skip_login")
     hostname_issues = get_all_hostname_issues()
 
+    from quasarr.storage.setup.radarr import (
+        is_radarr_configured,
+        is_radarr_skipped,
+    )
+    from quasarr.storage.setup.sonarr import (
+        is_sonarr_configured,
+        is_sonarr_skipped,
+    )
+
+    radarr_required = set(get_radarr_required_hostnames())
+    radarr_ok = is_radarr_configured(shared_state)
+    radarr_skipped = is_radarr_skipped()
+    sonarr_required = set(get_sonarr_required_hostnames())
+    sonarr_ok = is_sonarr_configured(shared_state)
+    sonarr_skipped = is_sonarr_skipped()
+
     for label in shared_state.values["sites"]:
         field_id = label.lower()
         current_value = hostnames.get(field_id) or ""
@@ -78,6 +98,8 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             field_id in get_login_required_hostnames()
             and skip_login_db.retrieve(field_id)
         )
+        needs_radarr = field_id in radarr_required and not radarr_ok
+        needs_sonarr = field_id in sonarr_required and not sonarr_ok
         issue = hostname_issues.get(field_id)
         timestamp = ""
         operation = ""
@@ -92,6 +114,30 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             status_emoji = "🟡"
             status_title = "Login was skipped"
             error_details_for_modal = "Login was skipped for this site."
+        elif needs_radarr:
+            status = "skipped" if radarr_skipped else "error"
+            status_emoji = "🟡" if radarr_skipped else "🔴"
+            status_title = (
+                "Radarr setup was skipped"
+                if radarr_skipped
+                else "Radarr not configured"
+            )
+            error_details_for_modal = (
+                "This site requires Radarr. Configure the Radarr URL and API key "
+                "in the Radarr Configuration section on the home page."
+            )
+        elif needs_sonarr:
+            status = "skipped" if sonarr_skipped else "error"
+            status_emoji = "🟡" if sonarr_skipped else "🔴"
+            status_title = (
+                "Sonarr setup was skipped"
+                if sonarr_skipped
+                else "Sonarr not configured"
+            )
+            error_details_for_modal = (
+                "This site requires Sonarr. Configure the Sonarr URL and API key "
+                "in the Sonarr Configuration section on the home page."
+            )
         elif issue:
             status = "error"
             status_emoji = "🔴"

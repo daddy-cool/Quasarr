@@ -44,7 +44,9 @@ from quasarr.storage.setup import (
     delete_skip_flaresolverr_preference,
     get_flaresolverr_status_data,
     get_notification_settings_data,
+    get_radarr_settings_data,
     get_skip_login,
+    get_sonarr_settings_data,
     get_timeout_slow_mode_settings_data,
     hostname_form_html,
     import_hostnames_from_url,
@@ -52,6 +54,8 @@ from quasarr.storage.setup import (
     save_hostnames,
     save_jdownloader_settings,
     save_notification_settings,
+    save_radarr_settings,
+    save_sonarr_settings,
     save_timeout_slow_mode_settings,
     send_notification_test,
     verify_jdownloader_credentials,
@@ -167,6 +171,26 @@ def setup_config(app, shared_state):
     @require_api_key
     def send_notification_test_api():
         return send_notification_test(shared_state)
+
+    @app.get("/api/radarr/settings")
+    @require_api_key
+    def get_radarr_settings_api():
+        return get_radarr_settings_data(shared_state)
+
+    @app.post("/api/radarr/settings")
+    @require_api_key
+    def save_radarr_settings_api():
+        return save_radarr_settings(shared_state)
+
+    @app.get("/api/sonarr/settings")
+    @require_api_key
+    def get_sonarr_settings_api():
+        return get_sonarr_settings_data(shared_state)
+
+    @app.post("/api/sonarr/settings")
+    @require_api_key
+    def save_sonarr_settings_api():
+        return save_sonarr_settings(shared_state)
 
     @app.get("/api/timeouts/settings")
     @require_api_key

@@ -32,16 +32,28 @@ from quasarr.providers.utils import (
     extract_allowed_keys,
     validate_address,
 )
-from quasarr.search.sources.helpers import get_login_required_hostnames
+from quasarr.search.sources.helpers import (
+    get_login_required_hostnames,
+    get_radarr_required_hostnames,
+    get_sonarr_required_hostnames,
+)
 from quasarr.storage.config import Config, get_clean_hostnames
 from quasarr.storage.setup import (
     flaresolverr_config,
     hostname_credentials_config,
     hostnames_config,
     initialize_notification_settings,
+    initialize_radarr_client,
+    initialize_sonarr_client,
     initialize_timeout_slow_mode_settings,
+    is_radarr_configured,
+    is_radarr_skipped,
+    is_sonarr_configured,
+    is_sonarr_skipped,
     jdownloader_config,
     path_config,
+    radarr_config,
+    sonarr_config,
 )
 from quasarr.storage.sqlite_database import DataBase
 
@@ -171,6 +183,30 @@ def run():
 
         if not flaresolverr_url and not flaresolverr_skipped:
             flaresolverr_config(shared_state)
+
+        # Check Radarr configuration if any configured hostname requires it
+        initialize_radarr_client(shared_state)
+        if not is_radarr_configured(shared_state) and not is_radarr_skipped():
+            radarr_required_sites = [
+                site
+                for site in get_radarr_required_hostnames()
+                if Config("Hostnames").get(site)
+            ]
+            if radarr_required_sites:
+                radarr_config(shared_state, radarr_required_sites)
+                initialize_radarr_client(shared_state)
+
+        # Check Sonarr configuration if any configured hostname requires it
+        initialize_sonarr_client(shared_state)
+        if not is_sonarr_configured(shared_state) and not is_sonarr_skipped():
+            sonarr_required_sites = [
+                site
+                for site in get_sonarr_required_hostnames()
+                if Config("Hostnames").get(site)
+            ]
+            if sonarr_required_sites:
+                sonarr_config(shared_state, sonarr_required_sites)
+                initialize_sonarr_client(shared_state)
 
         config = Config("JDownloader")
         user = config.get("user")

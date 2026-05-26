@@ -36,8 +36,14 @@ from quasarr.providers.notifications.helpers.notification_types import (
     get_user_configurable_notification_types,
 )
 from quasarr.providers.web_server import Server
-from quasarr.search.sources.helpers import get_login_required_hostnames
+from quasarr.search.sources.helpers import (
+    get_login_required_hostnames,
+    get_radarr_required_hostnames,
+    get_sonarr_required_hostnames,
+)
 from quasarr.storage.config import Config
+from quasarr.storage.setup.radarr import is_radarr_configured, is_radarr_skipped
+from quasarr.storage.setup.sonarr import is_sonarr_configured, is_sonarr_skipped
 from quasarr.storage.sqlite_database import DataBase
 
 
@@ -84,6 +90,13 @@ def get_api(shared_state_dict, shared_state_lock):
         working_count = 0
         total_count = 0
 
+        radarr_required = set(get_radarr_required_hostnames())
+        radarr_ok = is_radarr_configured(shared_state)
+        radarr_skipped = is_radarr_skipped()
+        sonarr_required = set(get_sonarr_required_hostnames())
+        sonarr_ok = is_sonarr_configured(shared_state)
+        sonarr_skipped = is_sonarr_skipped()
+
         for site_key in shared_state.values["sites"]:
             shorthand = site_key.lower()
             current_value = hostnames_config.get(shorthand)
@@ -95,13 +108,24 @@ def get_api(shared_state_dict, shared_state_lock):
                 skip_val = skip_login_db.retrieve(shorthand)
                 if skip_val and str(skip_val).lower() == "true":
                     continue
+            # Skip Radarr-required hostnames if Radarr was skipped
+            if shorthand in radarr_required and radarr_skipped and not radarr_ok:
+                continue
+            # Skip Sonarr-required hostnames if Sonarr was skipped
+            if shorthand in sonarr_required and sonarr_skipped and not sonarr_ok:
+                continue
 
             # This hostname counts toward total
             total_count += 1
 
-            # Check if it's working (no issues)
-            if shorthand not in hostname_issues:
-                working_count += 1
+            # Check if it's working (no issues and dependencies met)
+            if shorthand in hostname_issues:
+                continue
+            if shorthand in radarr_required and not radarr_ok:
+                continue
+            if shorthand in sonarr_required and not sonarr_ok:
+                continue
+            working_count += 1
 
         # Determine status
         if total_count == 0:
@@ -160,6 +184,16 @@ def get_api(shared_state_dict, shared_state_lock):
         skip_flaresolverr_db = DataBase("skip_flaresolverr")
         is_flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
         flaresolverr_url = Config("FlareSolverr").get("url") or ""
+
+        # Radarr settings
+        radarr_config = Config("Radarr")
+        radarr_url = radarr_config.get("url") or ""
+        radarr_api_key = radarr_config.get("api_key") or ""
+
+        # Sonarr settings
+        sonarr_config = Config("Sonarr")
+        sonarr_url = sonarr_config.get("url") or ""
+        sonarr_api_key = sonarr_config.get("api_key") or ""
 
         flaresolverr_warning = ""
         if is_flaresolverr_skipped:
@@ -449,6 +483,64 @@ def get_api(shared_state_dict, shared_state_lock):
 
                     <div id="notification-save-status" class="notification-status"></div>
                     <p>{render_button("Save Notification Settings", "primary", {"onclick": "saveNotificationSettings()", "type": "button", "id": "notificationSaveBtn"})}</p>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="radarrDetails">
+                <summary id="radarrSummary">🎬 Radarr Configuration</summary>
+                <div class="api-settings">
+                    <p class="api-hint">
+                        Optional. Used by Quasarr to look up movie metadata via Radarr's API.
+                    </p>
+
+                    <div class="input-group">
+                        <label for="radarrUrl">URL</label>
+                        <div class="input-row">
+                            <input type="text" id="radarrUrl" placeholder="http://192.168.0.1:7878" value="{radarr_url}">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="radarrApiKey">API Key</label>
+                        <div class="input-row">
+                            <input type="text" id="radarrApiKey" placeholder="Radarr API key" value="{radarr_api_key}">
+                        </div>
+                    </div>
+                    <div id="radarr-save-status" class="notification-status"></div>
+                    <p>
+                        {render_button("Save Radarr Settings", "primary", {"onclick": "saveRadarrSettings()", "type": "button", "id": "radarrSaveBtn"})}
+                        {render_button("Clear", "secondary", {"onclick": "confirmClearRadarrSettings()", "type": "button", "id": "radarrClearBtn"})}
+                    </p>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="sonarrDetails">
+                <summary id="sonarrSummary">📺 Sonarr Configuration</summary>
+                <div class="api-settings">
+                    <p class="api-hint">
+                        Optional. Used by Quasarr to look up series metadata via Sonarr's API.
+                    </p>
+
+                    <div class="input-group">
+                        <label for="sonarrUrl">URL</label>
+                        <div class="input-row">
+                            <input type="text" id="sonarrUrl" placeholder="http://192.168.0.1:8989" value="{sonarr_url}">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="sonarrApiKey">API Key</label>
+                        <div class="input-row">
+                            <input type="text" id="sonarrApiKey" placeholder="Sonarr API key" value="{sonarr_api_key}">
+                        </div>
+                    </div>
+                    <div id="sonarr-save-status" class="notification-status"></div>
+                    <p>
+                        {render_button("Save Sonarr Settings", "primary", {"onclick": "saveSonarrSettings()", "type": "button", "id": "sonarrSaveBtn"})}
+                        {render_button("Clear", "secondary", {"onclick": "confirmClearSonarrSettings()", "type": "button", "id": "sonarrClearBtn"})}
+                    </p>
                 </div>
             </details>
         </div>
@@ -1111,6 +1203,168 @@ def get_api(shared_state_dict, shared_state_lock):
                     setNotificationStatus(statusId, '✅ ' + data.message, true);
                 }} catch (error) {{
                     setNotificationStatus(statusId, '❌ ' + error.message, false);
+                }}
+            }}
+
+            async function saveRadarrSettings() {{
+                var saveButton = document.getElementById('radarrSaveBtn');
+                var urlInput = document.getElementById('radarrUrl');
+                var apiKeyInput = document.getElementById('radarrApiKey');
+                setNotificationStatus('radarr-save-status', 'Saving Radarr settings...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/radarr/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            url: urlInput ? urlInput.value : '',
+                            api_key: apiKeyInput ? apiKeyInput.value : ''
+                        }})
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save Radarr settings');
+                    }}
+                    setNotificationStatus('radarr-save-status', '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus('radarr-save-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Radarr Settings';
+                    }}
+                }}
+            }}
+
+            function confirmClearRadarrSettings() {{
+                showModal(
+                    'Clear Radarr Settings?',
+                    'This removes the saved Radarr URL and API key. Sites that require Radarr will stop working until you configure it again.',
+                    `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                     <button class="btn-primary" onclick="closeModal(); clearRadarrSettings();">Clear</button>`
+                );
+            }}
+
+            async function clearRadarrSettings() {{
+                var clearButton = document.getElementById('radarrClearBtn');
+                var saveButton = document.getElementById('radarrSaveBtn');
+                var urlInput = document.getElementById('radarrUrl');
+                var apiKeyInput = document.getElementById('radarrApiKey');
+                setNotificationStatus('radarr-save-status', 'Clearing Radarr settings...', true);
+
+                if (clearButton) {{
+                    clearButton.disabled = true;
+                    clearButton.textContent = 'Clearing...';
+                }}
+                if (saveButton) {{ saveButton.disabled = true; }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/radarr/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: '', api_key: '' }})
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to clear Radarr settings');
+                    }}
+                    if (urlInput) {{ urlInput.value = ''; }}
+                    if (apiKeyInput) {{ apiKeyInput.value = ''; }}
+                    setNotificationStatus('radarr-save-status', '✅ Radarr settings cleared', true);
+                }} catch (error) {{
+                    setNotificationStatus('radarr-save-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (clearButton) {{
+                        clearButton.disabled = false;
+                        clearButton.textContent = 'Clear';
+                    }}
+                    if (saveButton) {{ saveButton.disabled = false; }}
+                }}
+            }}
+
+            async function saveSonarrSettings() {{
+                var saveButton = document.getElementById('sonarrSaveBtn');
+                var urlInput = document.getElementById('sonarrUrl');
+                var apiKeyInput = document.getElementById('sonarrApiKey');
+                setNotificationStatus('sonarr-save-status', 'Saving Sonarr settings...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/sonarr/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            url: urlInput ? urlInput.value : '',
+                            api_key: apiKeyInput ? apiKeyInput.value : ''
+                        }})
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save Sonarr settings');
+                    }}
+                    setNotificationStatus('sonarr-save-status', '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus('sonarr-save-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Sonarr Settings';
+                    }}
+                }}
+            }}
+
+            function confirmClearSonarrSettings() {{
+                showModal(
+                    'Clear Sonarr Settings?',
+                    'This removes the saved Sonarr URL and API key. Sites that require Sonarr will stop working until you configure it again.',
+                    `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                     <button class="btn-primary" onclick="closeModal(); clearSonarrSettings();">Clear</button>`
+                );
+            }}
+
+            async function clearSonarrSettings() {{
+                var clearButton = document.getElementById('sonarrClearBtn');
+                var saveButton = document.getElementById('sonarrSaveBtn');
+                var urlInput = document.getElementById('sonarrUrl');
+                var apiKeyInput = document.getElementById('sonarrApiKey');
+                setNotificationStatus('sonarr-save-status', 'Clearing Sonarr settings...', true);
+
+                if (clearButton) {{
+                    clearButton.disabled = true;
+                    clearButton.textContent = 'Clearing...';
+                }}
+                if (saveButton) {{ saveButton.disabled = true; }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/sonarr/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ url: '', api_key: '' }})
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to clear Sonarr settings');
+                    }}
+                    if (urlInput) {{ urlInput.value = ''; }}
+                    if (apiKeyInput) {{ apiKeyInput.value = ''; }}
+                    setNotificationStatus('sonarr-save-status', '✅ Sonarr settings cleared', true);
+                }} catch (error) {{
+                    setNotificationStatus('sonarr-save-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (clearButton) {{
+                        clearButton.disabled = false;
+                        clearButton.textContent = 'Clear';
+                    }}
+                    if (saveButton) {{ saveButton.disabled = false; }}
                 }}
             }}
 

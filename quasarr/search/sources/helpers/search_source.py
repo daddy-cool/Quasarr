@@ -33,6 +33,14 @@ class AbstractSearchSource(ABC):
     def requires_login(self) -> bool:
         return False
 
+    @property
+    def requires_radarr(self) -> bool:
+        return False
+
+    @property
+    def requires_sonarr(self) -> bool:
+        return False
+
     @abstractmethod
     def search(
         self,
