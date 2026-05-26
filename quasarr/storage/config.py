@@ -35,6 +35,14 @@ class Config(object):
         "FlareSolverr": [
             ("url", "str", ""),
         ],
+        "Radarr": [
+            ("url", "str", ""),
+            ("api_key", "secret", ""),
+        ],
+        "Sonarr": [
+            ("url", "str", ""),
+            ("api_key", "secret", ""),
+        ],
         "Notifications": [
             ("discord_webhook", "secret", ""),
             ("telegram_bot_token", "secret", ""),

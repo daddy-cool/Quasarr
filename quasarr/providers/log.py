@@ -56,6 +56,10 @@ _log_level = _read_env_log("LOG", 20)
 _context_replace = {
     "quasarr": "",  # /quasarr/*
     "arr": "☠️",  # /quasarr/arr/*
+    "radarr": "🎬",  # /quasarr/storage/setup/radarr.py
+    "radarr_api": "🎬",  # /quasarr/providers/radarr_api.py
+    "sonarr": "📺",  # /quasarr/storage/setup/sonarr.py
+    "sonarr_api": "📺",  # /quasarr/providers/sonarr_api.py
     "api": "🌐",  # /quasarr/api/*
     "captcha": "🧩",  # /quasarr/api/captcha/*
     "config": "⚙️",  # /quasarr/api/config/*

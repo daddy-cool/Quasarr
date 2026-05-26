@@ -39,8 +39,13 @@ from quasarr.constants import (
     SEASON_EP_REGEX,
     SESSION_REQUEST_TIMEOUT_SECONDS,
 )
+from quasarr.providers import radarr_api, sonarr_api
 from quasarr.providers.log import crit, debug, error, trace, warn
-from quasarr.search.sources.helpers import get_login_required_hostnames
+from quasarr.search.sources.helpers import (
+    get_login_required_hostnames,
+    get_radarr_required_hostnames,
+    get_sonarr_required_hostnames,
+)
 from quasarr.storage.categories import download_category_exists, search_category_exists
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
@@ -198,7 +203,8 @@ def is_site_usable(shared_state, shorthand):
 
     For sites that don't require login, just checks if hostname is set.
     For login-required sites (al, dd, dl, nx), also checks that login wasn't skipped
-    and that credentials exist.
+    and that credentials exist. For Radarr/Sonarr-required sites, also checks that
+    the corresponding client is cached in shared_state.
 
     Args:
         shared_state: Shared state object
@@ -213,6 +219,16 @@ def is_site_usable(shared_state, shorthand):
     hostname = shared_state.values["config"]("Hostnames").get(shorthand)
     if not hostname:
         return False
+
+    # Check Radarr requirement (independent of login requirement)
+    if shorthand in get_radarr_required_hostnames():
+        if not radarr_api.get_client(shared_state):
+            return False
+
+    # Check Sonarr requirement (independent of login requirement)
+    if shorthand in get_sonarr_required_hostnames():
+        if not sonarr_api.get_client(shared_state):
+            return False
 
     if shorthand not in get_login_required_hostnames():
         return True  # No login needed, hostname is enough
