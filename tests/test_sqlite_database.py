@@ -102,121 +102,6 @@ class SQLiteDatabaseTests(unittest.TestCase):
         error_log.assert_called_once()
         self.assertIn("Restore a healthy backup", error_log.call_args.args[0])
 
-    def test_locked_wal_setup_is_retried_not_suppressed(self):
-        class FakeConnection:
-            def __init__(self, should_lock):
-                self.closed = False
-                self.should_lock = should_lock
-
-            def execute(self, query):
-                if query == "PRAGMA journal_mode = WAL" and self.should_lock:
-                    raise sqlite3.OperationalError("database schema is locked")
-                return self
-
-            def fetchone(self):
-                return ("wal",)
-
-            def close(self):
-                self.closed = True
-
-        attempts = {"count": 0}
-
-        def fake_connect(*_args, **_kwargs):
-            attempts["count"] += 1
-            return FakeConnection(should_lock=attempts["count"] == 1)
-
-        with (
-            patch("sqlite3.connect", side_effect=fake_connect),
-            patch("quasarr.storage.sqlite_database.warn") as warn_log,
-        ):
-            conn = DataBase._connect_with_retry(self.dbfile)
-
-        self.assertFalse(conn.closed)
-        self.assertEqual(2, attempts["count"])
-        warn_log.assert_not_called()
-
-    def test_non_lock_wal_setup_error_is_suppressed(self):
-        class FakeConnection:
-            def __init__(self):
-                self.closed = False
-                self.synchronous_set = False
-
-            def execute(self, query):
-                if query == "PRAGMA journal_mode = WAL":
-                    raise sqlite3.OperationalError(
-                        "cannot change into wal mode from within a transaction"
-                    )
-                if query == "PRAGMA synchronous = NORMAL":
-                    self.synchronous_set = True
-                return self
-
-            def fetchone(self):
-                return ("wal",)
-
-            def close(self):
-                self.closed = True
-
-        fake_connection = FakeConnection()
-
-        with (
-            patch("sqlite3.connect", return_value=fake_connection),
-            patch("quasarr.storage.sqlite_database.warn") as warn_log,
-        ):
-            self.assertIs(DataBase._connect(self.dbfile), fake_connection)
-
-        self.assertFalse(fake_connection.closed)
-        self.assertFalse(fake_connection.synchronous_set)
-        warn_log.assert_called_once()
-
-    def test_wal_setup_warns_when_sqlite_keeps_other_journal_mode(self):
-        class FakeConnection:
-            def __init__(self):
-                self.closed = False
-                self.synchronous_set = False
-
-            def execute(self, query):
-                if query == "PRAGMA synchronous = NORMAL":
-                    self.synchronous_set = True
-                return self
-
-            def fetchone(self):
-                return ("delete",)
-
-            def close(self):
-                self.closed = True
-
-        fake_connection = FakeConnection()
-
-        with (
-            patch("sqlite3.connect", return_value=fake_connection),
-            patch("quasarr.storage.sqlite_database.warn") as warn_log,
-        ):
-            self.assertIs(DataBase._connect(self.dbfile), fake_connection)
-
-        self.assertFalse(fake_connection.closed)
-        self.assertFalse(fake_connection.synchronous_set)
-        warn_log.assert_called_once()
-
-    def test_wal_setup_uses_normal_synchronous_only_when_wal_is_active(self):
-        class FakeConnection:
-            def __init__(self):
-                self.synchronous_set = False
-
-            def execute(self, query):
-                if query == "PRAGMA synchronous = NORMAL":
-                    self.synchronous_set = True
-                return self
-
-            def fetchone(self):
-                return ("wal",)
-
-        fake_connection = FakeConnection()
-
-        with patch("sqlite3.connect", return_value=fake_connection):
-            self.assertIs(DataBase._connect(self.dbfile), fake_connection)
-
-        self.assertTrue(fake_connection.synchronous_set)
-
     def test_busy_timeout_setup_error_closes_connection(self):
         class FakeConnection:
             def __init__(self):
@@ -241,29 +126,67 @@ class SQLiteDatabaseTests(unittest.TestCase):
 
         self.assertTrue(fake_connection.closed)
 
-    def test_wal_setup_database_error_closes_connection(self):
+    def test_connect_does_not_force_wal_mode(self):
+        db = DataBase("example_table")
+        try:
+            journal_mode = db._conn.execute("PRAGMA journal_mode").fetchone()
+            self.assertEqual("delete", str(journal_mode[0]).lower())
+        finally:
+            db._conn.close()
+
+    def test_maintenance_converts_existing_wal_database_back_to_delete(self):
+        conn = sqlite3.connect(self.dbfile)
+        try:
+            journal_mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()
+            self.assertEqual("wal", str(journal_mode[0]).lower())
+            conn.execute("CREATE TABLE example_table (key, value)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.assertTrue(DataBase.maintain(self.dbfile))
+
+        conn = sqlite3.connect(self.dbfile)
+        try:
+            journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
+            self.assertEqual("delete", str(journal_mode[0]).lower())
+        finally:
+            conn.close()
+
+    def test_maintenance_skips_vacuum_when_existing_wal_checkpoint_is_busy(self):
         class FakeConnection:
             def __init__(self):
-                self.closed = False
+                self.query = None
+                self.vacuum_ran = False
 
             def execute(self, query):
-                if query == "PRAGMA journal_mode = WAL":
-                    raise sqlite3.DatabaseError("database disk image is malformed")
+                self.query = query
+                if query == "VACUUM":
+                    self.vacuum_ran = True
                 return self
 
             def fetchone(self):
-                return ("wal",)
+                if self.query == "PRAGMA integrity_check":
+                    return ("ok",)
+                if self.query == "PRAGMA journal_mode":
+                    return ("wal",)
+                if self.query == "PRAGMA wal_checkpoint(TRUNCATE)":
+                    return (1, 0, 0)
+                return None
 
             def close(self):
-                self.closed = True
+                pass
 
-        fake_connection = FakeConnection()
+        connection = FakeConnection()
 
-        with patch("sqlite3.connect", return_value=fake_connection):
-            with self.assertRaises(sqlite3.DatabaseError):
-                DataBase._connect(self.dbfile)
+        with (
+            patch.object(DataBase, "_connect_with_retry", return_value=connection),
+            patch("quasarr.storage.sqlite_database.warn") as warn_log,
+        ):
+            self.assertIsNone(DataBase.maintain(self.dbfile))
 
-        self.assertTrue(fake_connection.closed)
+        self.assertFalse(connection.vacuum_ran)
+        warn_log.assert_called_once()
 
     def test_rollback_failure_does_not_mask_original_write_error(self):
         class FakeConnection:
@@ -284,34 +207,6 @@ class SQLiteDatabaseTests(unittest.TestCase):
             db.delete("first")
 
         warn_log.assert_called()
-
-    def test_integrity_error_during_wal_setup_is_not_suppressed(self):
-        class FakeConnection:
-            def __init__(self):
-                self.closed = False
-
-            def execute(self, query):
-                if query == "PRAGMA journal_mode = WAL":
-                    raise sqlite3.OperationalError("database disk image is malformed")
-                return self
-
-            def fetchone(self):
-                return ("wal",)
-
-            def close(self):
-                self.closed = True
-
-        fake_connection = FakeConnection()
-
-        with (
-            patch("sqlite3.connect", return_value=fake_connection),
-            patch("quasarr.storage.sqlite_database.warn") as warn_log,
-        ):
-            with self.assertRaises(sqlite3.OperationalError):
-                DataBase._connect(self.dbfile)
-
-        self.assertTrue(fake_connection.closed)
-        warn_log.assert_not_called()
 
     def test_sqlite_lock_variants_are_retried_as_lock_errors(self):
         for message in (
@@ -382,39 +277,6 @@ class SQLiteDatabaseTests(unittest.TestCase):
             DataBase, "_connect_with_retry", return_value=FakeConnection()
         ):
             self.assertFalse(DataBase.maintain(self.dbfile))
-
-    def test_maintenance_skips_when_wal_checkpoint_is_busy(self):
-        class FakeConnection:
-            def __init__(self):
-                self.query = None
-                self.vacuum_ran = False
-
-            def execute(self, query):
-                self.query = query
-                if query == "VACUUM":
-                    self.vacuum_ran = True
-                return self
-
-            def fetchone(self):
-                if self.query == "PRAGMA integrity_check":
-                    return ("ok",)
-                if self.query == "PRAGMA wal_checkpoint(TRUNCATE)":
-                    return (1, 0, 0)
-                return None
-
-            def close(self):
-                pass
-
-        connection = FakeConnection()
-
-        with (
-            patch.object(DataBase, "_connect_with_retry", return_value=connection),
-            patch("quasarr.storage.sqlite_database.warn") as warn_log,
-        ):
-            self.assertIsNone(DataBase.maintain(self.dbfile))
-
-        self.assertFalse(connection.vacuum_ran)
-        warn_log.assert_called_once()
 
     def test_ensure_table_does_not_touch_schema_when_table_exists(self):
         class FakeResult:

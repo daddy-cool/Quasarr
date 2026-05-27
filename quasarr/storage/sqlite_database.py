@@ -7,9 +7,9 @@ import time
 
 from quasarr.providers.log import error, warn
 
-SQLITE_TIMEOUT_SECONDS = 5
-SQLITE_BUSY_TIMEOUT_MS = 5000
-SQLITE_LOCK_ATTEMPTS = 2
+SQLITE_TIMEOUT_SECONDS = 30
+SQLITE_BUSY_TIMEOUT_MS = 30000
+SQLITE_LOCK_ATTEMPTS = 5
 
 
 class DataBase(object):
@@ -53,16 +53,6 @@ class DataBase(object):
         )
         try:
             conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
-            journal_mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()
-            wal_active = journal_mode and str(journal_mode[0]).lower() == "wal"
-            if wal_active:
-                conn.execute("PRAGMA synchronous = NORMAL")
-            else:
-                journal_mode_name = journal_mode[0] if journal_mode else "unknown"
-                warn(
-                    "Continuing without sqlite WAL mode because sqlite kept "
-                    f'journal mode "{journal_mode_name}".'
-                )
         except sqlite3.OperationalError as e:
             if cls._is_locked_error(e) or cls._is_integrity_error(e):
                 conn.close()
@@ -86,7 +76,7 @@ class DataBase(object):
                 last_error = e
                 if not cls._is_locked_error(e) or attempt + 1 == SQLITE_LOCK_ATTEMPTS:
                     break
-                time.sleep(0.2 * (attempt + 1))
+                time.sleep(min(5, 0.5 * (attempt + 1)))
             except sqlite3.DatabaseError as e:
                 last_error = e
                 break
@@ -105,14 +95,19 @@ class DataBase(object):
                     f"or delete Quasarr.db to recreate it: {result[0]}"
                 )
                 return False
-            checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-            if checkpoint and checkpoint[0]:
-                warn(
-                    "Quasarr.db startup maintenance skipped because the WAL "
-                    "checkpoint is busy. Check for another running Quasarr instance "
-                    "if this repeats."
-                )
-                return None
+            journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
+            wal_active = journal_mode and str(journal_mode[0]).lower() == "wal"
+            if wal_active:
+                checkpoint = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if checkpoint and checkpoint[0]:
+                    warn(
+                        "Quasarr.db startup maintenance skipped because the WAL "
+                        "checkpoint is busy. Check for another running Quasarr instance "
+                        "if this repeats."
+                    )
+                    return None
+                conn.execute("PRAGMA journal_mode = DELETE").fetchone()
+
             conn.execute("VACUUM")
             conn.commit()
             return True
@@ -168,7 +163,7 @@ class DataBase(object):
                 last_error = e
                 if not self._is_locked_error(e) or attempt + 1 == SQLITE_LOCK_ATTEMPTS:
                     break
-                time.sleep(0.2 * (attempt + 1))
+                time.sleep(min(5, 0.5 * (attempt + 1)))
         self._log_database_error(last_error)
         raise last_error
 
