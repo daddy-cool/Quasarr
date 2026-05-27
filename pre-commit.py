@@ -133,9 +133,8 @@ def task_version_bump():
             return (0, 0, 0)
 
     try:
-        print("🌐 Fetching remote to compare versions...")
+        print("🌐 Fetching origin/main to compare versions...")
 
-        # Skip remote comparison cleanly in local environments without origin/main.
         remote_ref = "origin/main"
         has_origin = (
             subprocess.run(
@@ -146,37 +145,33 @@ def task_version_bump():
             ).returncode
             == 0
         )
+
         if has_origin:
             run(["git", "fetch", "origin", "main"], check=False)
             remote_head = subprocess.run(
-                ["git", "rev-parse", "--verify", "origin/main"],
+                ["git", "rev-parse", "--verify", remote_ref],
                 check=False,
                 capture_output=True,
                 text=True,
             )
-            if remote_head.returncode == 0:
-                try:
-                    base = subprocess.check_output(
-                        ["git", "merge-base", "HEAD", remote_ref], text=True
-                    ).strip()
-                except Exception:
-                    base = remote_ref
-            else:
+            if remote_head.returncode != 0:
                 print(
                     "ℹ️  origin/main not available. Skipping remote version comparison."
                 )
-                base = None
+                remote_ref = None
         else:
             print(
                 "ℹ️  No 'origin' remote configured. Skipping remote version comparison."
             )
-            base = None
+            remote_ref = None
 
-        # Read Main Version
+        # Read version directly from freshly fetched origin/main.
+        # Do not use merge-base: it can compare against an old ancestor.
         try:
-            if base:
+            if remote_ref:
                 main_v_content = subprocess.check_output(
-                    ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
+                    ["git", "show", f"{remote_ref}:{VERSION_FILE.as_posix()}"],
+                    text=True,
                 )
                 main_v = get_ver(main_v_content)
             else:
