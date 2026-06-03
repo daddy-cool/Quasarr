@@ -4,7 +4,7 @@
 
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import unescape
 
 import requests
@@ -253,7 +253,7 @@ def _parse_posted_ago(txt):
             delta = timedelta(days=30 * value)
         else:
             delta = timedelta(days=365 * value)
-        return (datetime.now(datetime.timezone.utc) - delta).strftime(
+        return (datetime.now(timezone.utc) - delta).strftime(
             "%a, %d %b %Y %H:%M:%S +0000"
         )
     except Exception:
