@@ -25,6 +25,16 @@ def git_status_has_changes():
     return bool(run(["git", "status", "--porcelain"], capture=True).stdout.strip())
 
 
+def read_text_preserve_newlines(path):
+    with path.open(encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def write_text_preserve_newlines(path, content):
+    with path.open("w", encoding="utf-8", newline="") as f:
+        f.write(content)
+
+
 # --- TASKS ---
 
 
@@ -180,15 +190,17 @@ def task_version_bump():
             main_v = None
 
         # Read Current Version
-        curr_v = get_ver(VERSION_FILE.read_text())
+        curr_v = get_ver(read_text_preserve_newlines(VERSION_FILE))
 
         print(f"📊 Main: {main_v} | Current: {curr_v}")
 
         if main_v and curr_v and ver_tuple(curr_v) <= ver_tuple(main_v):
             new_v = bump(main_v)
             print(f"🚀 Bumping version to: {new_v}")
-            content = VERSION_FILE.read_text().replace(f'"{curr_v}"', f'"{new_v}"')
-            VERSION_FILE.write_text(content)
+            content = read_text_preserve_newlines(VERSION_FILE).replace(
+                f'"{curr_v}"', f'"{new_v}"', 1
+            )
+            write_text_preserve_newlines(VERSION_FILE, content)
 
             run(["git", "add", "."])
             return True, new_v

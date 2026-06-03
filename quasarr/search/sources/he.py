@@ -4,7 +4,7 @@
 
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from html import unescape
 
 import requests
@@ -143,6 +143,7 @@ class Source(AbstractSearchSource):
                 if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
+                    trace("invalid release {}", title)
                     continue
 
                 size_item = _extract_size(head_split[1].strip())
@@ -150,21 +151,13 @@ class Source(AbstractSearchSource):
 
                 size = mb * 1024 * 1024
 
-                published = None
-                p_meta = data.find("p", class_="meta")
-                if p_meta:
-                    posted_span = None
-                    for sp in p_meta.find_all("span"):
-                        txt = sp.get_text(" ", strip=True)
-                        if txt.lower().startswith("posted") or "ago" in txt.lower():
-                            posted_span = txt
-                            break
-
-                    if posted_span:
-                        published = _parse_posted_ago(posted_span)
-
-                if published is None:
-                    continue
+                published = ""
+                post_time = data.find("span", class_="post-time")
+                if post_time:
+                    txt = post_time.get_text(" ", strip=True)
+                    published = _parse_posted_ago(txt)
+                    if published == "":
+                        debug("missing publish date for {}", title)
 
                 release_imdb_id = None
                 try:
@@ -260,7 +253,9 @@ def _parse_posted_ago(txt):
             delta = timedelta(days=30 * value)
         else:
             delta = timedelta(days=365 * value)
-        return (datetime.utcnow() - delta).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        return (datetime.now(timezone.utc) - delta).strftime(
+            "%a, %d %b %Y %H:%M:%S +0000"
+        )
     except Exception:
         return ""
 
