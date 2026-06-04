@@ -15,6 +15,7 @@ Per-source notes for the `AL` integration. For conventions that apply to every s
 - Module: `quasarr/downloads/sources/al.py`
 - Inherits: `AbstractDownloadSource`
 - Link protection: handled in `quasarr/downloads/linkcrypters/al.py` (CAPTCHA solving and content decryption); FlareSolverr is required for the download flow.
+- CAPTCHA flow: the details page and the initial `/ajax/captcha` (`nocaptcha`) request run on the FlareSolverr browser session to arm the challenge. The CAPTCHA solve (icon fetch + selection submit on `/files/captcha`) and the final `/ajax/captcha` (`captcha`) validation must run on the same `requests.Session`, because AL binds a solved CAPTCHA to the client that solved it — validating from the FlareSolverr browser instead is rejected with `The captcha ID was invalid`. CAPTCHA POST requests include browser-style AJAX headers, and the requests session keeps the current FlareSolverr User-Agent so it stays browser-consistent.
 
 ## Notable quirks
 
