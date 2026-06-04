@@ -70,7 +70,10 @@ class WxDirectLinksTests(unittest.TestCase):
             _release(
                 self.TITLE,
                 {
-                    "ddownload.com": ["https://ddownload.com/a", "https://ddownload.com/b"],
+                    "ddownload.com": [
+                        "https://ddownload.com/a",
+                        "https://ddownload.com/b",
+                    ],
                     "rapidgator.net": ["https://rapidgator.net/file/c"],
                 },
                 {
