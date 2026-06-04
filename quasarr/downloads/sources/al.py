@@ -29,6 +29,10 @@ from quasarr.downloads.sources.helpers.anime_title import (
 from quasarr.downloads.sources.helpers.anime_title import (
     subtitle_tokens as _shared_subtitle_tokens,
 )
+from quasarr.providers.cloudflare import (
+    flaresolverr_create_session,
+    flaresolverr_destroy_session,
+)
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.sessions.al import (
@@ -71,42 +75,46 @@ class Source(AbstractDownloadSource):
             mark_hostname_issue(Source.initials, "download", "Session error")
             return {}
 
-        details_page = fetch_via_flaresolverr(
-            shared_state,
-            "GET",
-            url,
-            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-        )
-        details_html = details_page.get("text", "")
-        if not details_html:
-            info(f"Failed to load details page for {title} at {url}")
-            return {}
-
-        episode_in_title = _extract_episode(title)
-        if episode_in_title:
-            selection = episode_in_title - 1  # Convert to zero-based index
-        else:
-            selection = "cnl"
-
-        title, release_id = _check_release(
-            shared_state, details_html, release_id, title, episode_in_title
-        )
-        if release_id == 0:
-            info(f"No valid release ID found for {title} - Download failed!")
-            return {}
-
-        anime_identifier = url.rstrip("/").split("/")[-1]
-
-        info(f'Selected "Release {release_id}" from {url}')
-
+        browser_session_id = flaresolverr_create_session(shared_state)
         links = []
         try:
+            details_page = fetch_via_flaresolverr(
+                shared_state,
+                "GET",
+                url,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                session_id=browser_session_id,
+            )
+            details_html = details_page.get("text", "")
+            if not details_html:
+                info(f"Failed to load details page for {title} at {url}")
+                return {}
+
+            episode_in_title = _extract_episode(title)
+            if episode_in_title:
+                selection = episode_in_title - 1  # Convert to zero-based index
+            else:
+                selection = "cnl"
+
+            title, release_id = _check_release(
+                shared_state, details_html, release_id, title, episode_in_title
+            )
+            if release_id == 0:
+                info(f"No valid release ID found for {title} - Download failed!")
+                return {}
+
+            anime_identifier = url.rstrip("/").split("/")[-1]
+
+            info(f'Selected "Release {release_id}" from {url}')
+
             raw_request = json.dumps(
                 ["media", anime_identifier, "downloads", release_id, selection]
             )
             b64 = base64.b64encode(raw_request.encode("ascii")).decode("ascii")
 
             post_url = f"https://www.{al}/ajax/captcha"
+            ajax_headers = _build_ajax_headers()
+            captcha_headers = _build_captcha_headers(al, url)
             payload = {"enc": b64, "response": "nocaptcha"}
 
             result = fetch_via_flaresolverr(
@@ -115,6 +123,8 @@ class Source(AbstractDownloadSource):
                 target_url=post_url,
                 post_data=payload,
                 timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                session_id=browser_session_id,
+                request_headers=ajax_headers,
             )
 
             status = result.get("status_code")
@@ -155,6 +165,8 @@ class Source(AbstractDownloadSource):
                                 shared_state,
                                 fetch_via_flaresolverr,
                                 fetch_via_requests_session,
+                                session_id=browser_session_id,
+                                request_headers=captcha_headers,
                             )
 
                             solved = (
@@ -169,18 +181,24 @@ class Source(AbstractDownloadSource):
                                     "captcha-idhf": 0,
                                     "captcha-hf": captcha_id,
                                 }
-                                check_solution = fetch_via_flaresolverr(
+                                # Validate through the same requests.Session that
+                                # solved the CAPTCHA (rT:1/images/rT:2). AL binds the
+                                # solved CAPTCHA to the solving client; validating via
+                                # the FlareSolverr browser hits a different cookie jar
+                                # and AL rejects it with "The captcha ID was invalid".
+                                check_solution = fetch_via_requests_session(
                                     shared_state,
                                     method="POST",
                                     target_url=post_url,
                                     post_data=payload,
                                     timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+                                    request_headers=ajax_headers,
                                 )
                                 try:
-                                    response_json = check_solution.get("json", {})
+                                    response_json = check_solution.json()
                                 except ValueError as e:
                                     raise RuntimeError(
-                                        f"Unexpected /ajax/captcha response: {check_solution.get('text', '')}"
+                                        f"Unexpected /ajax/captcha response: {check_solution.text}"
                                     ) from e
 
                                 code = response_json.get("code", "")
@@ -261,6 +279,9 @@ class Source(AbstractDownloadSource):
                 str(e) if "e" in dir() else "Download error",
             )
             invalidate_session(shared_state)
+        finally:
+            if browser_session_id:
+                flaresolverr_destroy_session(shared_state, browser_session_id)
 
         success = bool(links)
         if success:
@@ -271,6 +292,25 @@ class Source(AbstractDownloadSource):
         links_with_mirrors = [[url, _derive_mirror(url)] for url in links]
 
         return {"links": links_with_mirrors, "password": f"www.{al}", "title": title}
+
+
+def _build_ajax_headers():
+    return {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
+
+def _build_captcha_headers(al, referer):
+    headers = _build_ajax_headers()
+    headers.update(
+        {
+            "Origin": f"https://www.{al}",
+            "Referer": referer,
+        }
+    )
+    return headers
 
 
 def _roman_to_int(r: str) -> int:

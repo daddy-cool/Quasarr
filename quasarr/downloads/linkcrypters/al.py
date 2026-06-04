@@ -177,7 +177,12 @@ def calculate_pixel_based_difference(img1, img2):
 
 
 def solve_captcha(
-    hostname, shared_state, fetch_via_flaresolverr, fetch_via_requests_session
+    hostname,
+    shared_state,
+    fetch_via_flaresolverr,
+    fetch_via_requests_session,
+    session_id=None,
+    request_headers=None,
 ):
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
@@ -189,18 +194,19 @@ def solve_captcha(
     al = shared_state.values["config"]("Hostnames").get(hostname)
     captcha_base = f"https://www.{al}/files/captcha"
 
-    result = fetch_via_flaresolverr(
+    response = fetch_via_requests_session(
         shared_state,
         method="POST",
         target_url=captcha_base,
         post_data={"cID": 0, "rT": 1},
         timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        request_headers=request_headers,
     )
 
     try:
-        image_ids = result["json"]
+        image_ids = response.json()
     except ValueError as e:
-        raise RuntimeError(f"Cannot decode captcha IDs: {result['text']}") from e
+        raise RuntimeError(f"Cannot decode captcha IDs: {response.text}") from e
 
     if not isinstance(image_ids, list) or len(image_ids) < 2:
         raise RuntimeError("Unexpected captcha IDs format.")
@@ -262,12 +268,13 @@ def solve_captcha(
         f'CAPTCHA image "{identified_captcha_image}" - difference to others: {different_pixels_percentage}%'
     )
 
-    result = fetch_via_flaresolverr(
+    response = fetch_via_requests_session(
         shared_state,
         method="POST",
         target_url=captcha_base,
         post_data={"cID": 0, "pC": identified_captcha_image, "rT": 2},
         timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        request_headers=request_headers,
     )
 
-    return {"response": result["text"], "captcha_id": identified_captcha_image}
+    return {"response": response.text, "captcha_id": identified_captcha_image}

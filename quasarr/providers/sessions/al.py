@@ -242,6 +242,8 @@ def fetch_via_flaresolverr(
     target_url: str,
     post_data: dict = None,
     timeout: int | None = None,
+    session_id: str | None = None,
+    request_headers: dict | None = None,
 ):
     """
     Load (or recreate) the requests.Session from DB.
@@ -254,6 +256,8 @@ def fetch_via_flaresolverr(
     - method: "GET" or "POST"
     - post_data: dict of form-fields if method=="POST"
     - timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
+    - session_id: optional FlareSolverr browser session to reuse for stateful flows
+    - request_headers: optional headers for the browser request
     """
     if timeout is None:
         timeout = SESSION_REQUEST_TIMEOUT_SECONDS
@@ -295,6 +299,10 @@ def fetch_via_flaresolverr(
         # Inject every cookie from our Python session into FlareSolverr
         "cookies": _load_session_cookies_for_flaresolverr(sess),
     }
+    if session_id:
+        fs_payload["session"] = session_id
+    if request_headers:
+        fs_payload["headers"] = request_headers
 
     if method.upper() == "POST":
         # FlareSolverr expects postData as urlencoded string
@@ -332,6 +340,9 @@ def fetch_via_flaresolverr(
         )
 
     solution = fs_json["solution"]
+    user_agent = solution.get("userAgent")
+    if user_agent:
+        sess.headers.update({"User-Agent": user_agent})
 
     # Extract the raw HTML/JSON body that FlareSolverr fetched
     raw_body = solution.get("response", "")
@@ -374,6 +385,7 @@ def fetch_via_requests_session(
     post_data: dict = None,
     timeout: int | None = None,
     year: int = None,
+    request_headers: dict | None = None,
 ):
     """
     - method: "GET" or "POST"
@@ -397,10 +409,14 @@ def fetch_via_requests_session(
         trace("Removed year filter cookie")
 
     # Execute request
+    headers = dict(sess.headers)
+    if request_headers:
+        headers.update(request_headers)
+
     if method.upper() == "GET":
-        r = sess.get(target_url, timeout=timeout)
+        r = sess.get(target_url, headers=headers, timeout=timeout)
     else:  # POST
-        r = sess.post(target_url, data=post_data, timeout=timeout)
+        r = sess.post(target_url, data=post_data, headers=headers, timeout=timeout)
 
     r.raise_for_status()
 
