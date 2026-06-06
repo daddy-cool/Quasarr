@@ -13,40 +13,24 @@ from quasarr.providers.log import debug, info
 from quasarr.providers.utils import check_links_online_status
 
 
-def _direct_hoster_online(url, shared_state):
-    """
-    Liveness probe for a direct hoster link.
-
-    Deliberately filecrypt-independent: WX's status badges live on
-    filecrypt.cc, which can be IP-banned or down — exactly what the direct
-    links are meant to route around. Conservative on purpose: only a hard
-    not-found response counts as offline, so a live link is never dropped
-    because of a flaky probe (JDownloader does the final verification).
-    """
-    try:
-        resp = requests.head(
-            url,
-            headers={"User-Agent": shared_state.values["user_agent"]},
-            allow_redirects=True,
-            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
-        )
-        return resp.status_code not in (404, 410, 451)
-    except Exception:
-        return True
-
-
 def _collect_online_direct_links(release, mirrors, shared_state):
     """
     Build ready-to-use direct download links for a single mirror from the WX
     'links' field (plain hoster URLs, no crypter/CAPTCHA needed).
 
+    Uses the same filecrypt status badges (options.check) that WX itself uses
+    to display green/red status on their site — identical to the crypted-links
+    path. HEAD-probing the hoster URLs directly is unreliable: premium hosters
+    return HTTP 200 (or redirect to a login page that also resolves 200) for
+    deleted files, making every mirror look online regardless of actual state.
+
     Returns (online_hoster_count, links) where links is a flat
-    [[url, hoster], ...] list covering every hoster whose links are reachable.
+    [[url, hoster], ...] list covering every hoster whose badge is green.
     """
     links_field = release.get("links", {}) or {}
+    check_urls = release.get("options", {}).get("check", {}) or {}
 
-    online_links = []
-    online_hosters = 0
+    links_with_status = []
 
     for hoster, urls in links_field.items():
         # Honor the requested mirror whitelist (hoster names).
@@ -59,10 +43,16 @@ def _collect_online_direct_links(release, mirrors, shared_state):
         if not clean:
             continue
 
-        # One representative probe per hoster (all parts live or die together).
-        if _direct_hoster_online(clean[0], shared_state):
-            online_hosters += 1
-            online_links.extend([[u, hoster] for u in clean])
+        # All parts for the same hoster share one badge — probe once, apply to all.
+        status_url = check_urls.get(hoster)
+        for u in clean:
+            links_with_status.append([u, hoster, status_url])
+
+    if not links_with_status:
+        return 0, []
+
+    online_links = check_links_online_status(links_with_status, shared_state)
+    online_hosters = len(set(link[1] for link in online_links))
 
     return online_hosters, online_links
 
