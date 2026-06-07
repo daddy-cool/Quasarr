@@ -104,9 +104,19 @@ class WxDirectLinksTests(unittest.TestCase):
                     "ddownload.com": "https://filecrypt.cc/Container/AAA.html",
                     "rapidgator.net": "https://filecrypt.cc/Container/BBB.html",
                 },
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/A.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/B.png",
+                },
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/A.png",
+                "https://filecrypt.cc/Stat/B.png",
+            },
+        )
         urls = sorted(link[0] for link in result["links"])
         # The filecrypt containers are handed over; no direct link leaks through.
         self.assertEqual(
@@ -131,9 +141,19 @@ class WxDirectLinksTests(unittest.TestCase):
                     "ddownload.com": "https://hide.cx/fc/Container/HIDE.html",
                     "rapidgator.net": "https://filecrypt.cc/Container/BBB.html",
                 },
+                check={
+                    "ddownload.com": "https://filecrypt.cc/Stat/H.png",
+                    "rapidgator.net": "https://filecrypt.cc/Stat/F.png",
+                },
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={
+                "https://filecrypt.cc/Stat/H.png",
+                "https://filecrypt.cc/Stat/F.png",
+            },
+        )
         urls = [link[0] for link in result["links"]]
         self.assertEqual(urls, ["https://hide.cx/fc/Container/HIDE.html"])
 
@@ -145,13 +165,35 @@ class WxDirectLinksTests(unittest.TestCase):
                 self.TITLE,
                 {"rapidgator.net": ["https://rapidgator.net/file/x"]},
                 {"rapidgator.net": "https://filecrypt.cc/Container/ZZZ.html"},
+                check={"rapidgator.net": "https://filecrypt.cc/Stat/Z.png"},
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/Z.png"},
+        )
         self.assertEqual(
             [link[0] for link in result["links"]],
             ["https://filecrypt.cc/Container/ZZZ.html"],
         )
+
+    def test_unchecked_container_does_not_preempt_green_direct(self):
+        # A container without a status badge is not certified online and must
+        # not jump ahead of a badge-green direct link.
+        releases = [
+            _release(
+                self.TITLE,
+                {"ddownload.com": ["https://ddownload.com/live"]},
+                {"rapidgator.net": "https://hide.cx/container/NOBADGE"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/GREEN.png"},
+            )
+        ]
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/GREEN.png"},
+        )
+        urls = [link[0] for link in result["links"]]
+        self.assertEqual(urls, ["https://ddownload.com/live"])
 
     def test_direct_links_used_when_all_containers_red(self):
         # Container badge is red, a direct-only hoster has a green badge: with no
@@ -322,15 +364,19 @@ class WxDirectLinksTests(unittest.TestCase):
         self.assertFalse(any("/m1" in u for u in urls))
 
     def test_falls_back_to_crypted_when_no_direct_links(self):
-        # Empty 'links' field → must fall back to the filecrypt container.
+        # Empty 'links' field → must use the online filecrypt container.
         releases = [
             _release(
                 self.TITLE,
                 {},
                 {"ddownload.com": "https://filecrypt.cc/Container/CCC.html"},
+                check={"ddownload.com": "https://filecrypt.cc/Stat/C.png"},
             )
         ]
-        result = self._run(releases)
+        result = self._run(
+            releases,
+            online_badge_urls={"https://filecrypt.cc/Stat/C.png"},
+        )
         urls = [link[0] for link in result["links"]]
         self.assertEqual(urls, ["https://filecrypt.cc/Container/CCC.html"])
 

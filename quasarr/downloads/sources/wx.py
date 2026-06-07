@@ -173,10 +173,19 @@ class Source(AbstractDownloadSource):
                         fc_candidates.append([container_url, hoster, state_url])
                     # Other crypters are unsupported and ignored.
 
+                # Only containers that actually carry a status badge are
+                # eligible for the certified-online tiers. A container without a
+                # badge is not certified online (check_links_online_status would
+                # treat a missing status URL as online), so it must not outrank a
+                # badge-green direct link or another mirror; it stays a no-signal
+                # last resort (tier 4) instead.
+                hide_badged = [c for c in hide_candidates if c[2] is not None]
+                fc_badged = [c for c in fc_candidates if c[2] is not None]
+
                 # Tier 1 candidate: this mirror's online hide.cx containers.
                 online_hide = (
-                    check_links_online_status(hide_candidates, shared_state)
-                    if hide_candidates
+                    check_links_online_status(hide_badged, shared_state)
+                    if hide_badged
                     else []
                 )
                 if online_hide and (
@@ -186,8 +195,8 @@ class Source(AbstractDownloadSource):
 
                 # Tier 2 candidate: this mirror's online filecrypt containers.
                 online_fc = (
-                    check_links_online_status(fc_candidates, shared_state)
-                    if fc_candidates
+                    check_links_online_status(fc_badged, shared_state)
+                    if fc_badged
                     else []
                 )
                 if online_fc and (best_fc is None or len(online_fc) > best_fc[0]):
