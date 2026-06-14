@@ -88,7 +88,8 @@ def get_links_status(package, all_links, is_archive=False):
         - all_finished: bool - True if all links are done (download + extraction if applicable)
         - eta: int or None - estimated time remaining
         - error: str or None - error message if any
-        - offline_mirror_linkids: list - link UUIDs that are offline but have online mirrors
+        - offline_mirror_linkids: list - offline link UUIDs to clean up (online mirror exists)
+        - not_downloadable_linkids: list - "not downloadable" link UUIDs to remove by id (online mirror exists)
     """
     package_uuid = package.get("uuid")
     package_name = package.get("name", "unknown")
@@ -131,23 +132,36 @@ def get_links_status(package, all_links, is_archive=False):
             debug(f"Mirror '{domain}' has all {len(mirror_links)} links online")
             break
 
-    # Collect unusable link IDs (offline or not-downloadable) for cleanup,
-    # but only if there's a healthy mirror to fall back to. Not-downloadable
-    # links keep availability "online" in JD, so they must be matched on status
-    # here too — otherwise they linger, keep all_finished false, and stall the
-    # package even though another mirror can complete it.
+    # Collect link IDs to clean up when a healthy mirror exists. Offline links
+    # are removed via JD's DELETE_OFFLINE cleanup filter. Not-downloadable links
+    # keep availability "online" in JD, so DELETE_OFFLINE skips them — they are
+    # collected separately and removed by id (removeLinks) in both the
+    # linkgrabber and downloader passes. Without a healthy mirror neither list
+    # is removed; the error path marks the release failed instead.
     offline_links = [
         link
         for link in links_in_package
         if link.get("availability", "").lower() == "offline"
-        or is_not_downloadable(link.get("status"))
     ]
-    offline_ids = [link.get("uuid") for link in offline_links]
-    offline_mirror_linkids = offline_ids if has_mirror_all_online else []
+    not_downloadable_links = [
+        link
+        for link in links_in_package
+        if is_not_downloadable(link.get("status"))
+        and link.get("availability", "").lower() != "offline"
+    ]
+    offline_mirror_linkids = (
+        [link.get("uuid") for link in offline_links] if has_mirror_all_online else []
+    )
+    not_downloadable_linkids = (
+        [link.get("uuid") for link in not_downloadable_links]
+        if has_mirror_all_online
+        else []
+    )
 
-    if offline_links:
+    if offline_links or not_downloadable_links:
         debug(
-            f"{len(offline_links)} unusable links, has_mirror_all_online={has_mirror_all_online}"
+            f"{len(offline_links)} offline, {len(not_downloadable_links)} not-downloadable "
+            f"links, has_mirror_all_online={has_mirror_all_online}"
         )
 
     # First pass: detect if ANY link has extraction activity (for safety override)
@@ -251,6 +265,7 @@ def get_links_status(package, all_links, is_archive=False):
         "eta": eta,
         "error": error,
         "offline_mirror_linkids": offline_mirror_linkids,
+        "not_downloadable_linkids": not_downloadable_linkids,
     }
 
 
@@ -419,6 +434,21 @@ def get_packages(shared_state, _cache=None, auto_start=True):
                 except Exception as e:
                     debug(f"Failed to cleanup offline links: {e}")
 
+            # Not-downloadable links keep availability "online", so DELETE_OFFLINE
+            # skips them; remove them by id so they cannot stall the package.
+            not_downloadable_linkids = link_details["not_downloadable_linkids"]
+            if not_downloadable_linkids:
+                debug(
+                    f"Removing {len(not_downloadable_linkids)} not-downloadable links from '{package_name}'"
+                )
+                try:
+                    shared_state.get_device().linkgrabber.remove_links(
+                        not_downloadable_linkids,
+                        [package_uuid],
+                    )
+                except Exception as e:
+                    debug(f"Failed to remove not-downloadable links: {e}")
+
             location = "history" if error else "queue"
             packages.append(
                 {
@@ -470,6 +500,23 @@ def get_packages(shared_state, _cache=None, auto_start=True):
 
             error = link_details["error"]
             finished = link_details["all_finished"]
+
+            # A link can flip to "Not downloadable!" only after auto-start, while
+            # it sits in the downloader list. DELETE_OFFLINE never runs here and
+            # the IDs are otherwise unconsumed, so remove them by id to stop the
+            # bad mirror from keeping the package at all_finished=false forever.
+            not_downloadable_linkids = link_details["not_downloadable_linkids"]
+            if not_downloadable_linkids:
+                debug(
+                    f"Removing {len(not_downloadable_linkids)} not-downloadable links from downloader package '{package_name}'"
+                )
+                try:
+                    shared_state.get_device().downloads.remove_links(
+                        not_downloadable_linkids,
+                        [package_uuid],
+                    )
+                except Exception as e:
+                    debug(f"Failed to remove not-downloadable links: {e}")
 
             # Additional check: if download is 100% complete and no ETA, it's finished
             # This catches non-archive packages or when archive detection fails

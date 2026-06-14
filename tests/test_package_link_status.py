@@ -63,9 +63,11 @@ class GetLinksStatusNotDownloadableTests(unittest.TestCase):
 
         self.assertIsNone(result["error"])
         self.assertFalse(result["all_finished"])
-        # The not-downloadable link must be queued for cleanup, otherwise it
-        # lingers and keeps the package from ever finishing.
-        self.assertEqual(result["offline_mirror_linkids"], [21])
+        # A not-downloadable link keeps availability "online", so it must be
+        # queued for removal by id (not via the offline-only cleanup) — otherwise
+        # it lingers and keeps the package from ever finishing.
+        self.assertEqual(result["not_downloadable_linkids"], [21])
+        self.assertEqual(result["offline_mirror_linkids"], [])
 
     def test_offline_links_collected_for_cleanup_with_online_mirror(self):
         links = [
@@ -77,6 +79,7 @@ class GetLinksStatusNotDownloadableTests(unittest.TestCase):
 
         self.assertIsNone(result["error"])
         self.assertEqual(result["offline_mirror_linkids"], [21])
+        self.assertEqual(result["not_downloadable_linkids"], [])
 
 
 if __name__ == "__main__":
