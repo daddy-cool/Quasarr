@@ -131,18 +131,23 @@ def get_links_status(package, all_links, is_archive=False):
             debug(f"Mirror '{domain}' has all {len(mirror_links)} links online")
             break
 
-    # Collect offline link IDs (only if there's an online mirror available)
+    # Collect unusable link IDs (offline or not-downloadable) for cleanup,
+    # but only if there's a healthy mirror to fall back to. Not-downloadable
+    # links keep availability "online" in JD, so they must be matched on status
+    # here too — otherwise they linger, keep all_finished false, and stall the
+    # package even though another mirror can complete it.
     offline_links = [
         link
         for link in links_in_package
         if link.get("availability", "").lower() == "offline"
+        or is_not_downloadable(link.get("status"))
     ]
     offline_ids = [link.get("uuid") for link in offline_links]
     offline_mirror_linkids = offline_ids if has_mirror_all_online else []
 
     if offline_links:
         debug(
-            f"{len(offline_links)} offline links, has_mirror_all_online={has_mirror_all_online}"
+            f"{len(offline_links)} unusable links, has_mirror_all_online={has_mirror_all_online}"
         )
 
     # First pass: detect if ANY link has extraction activity (for safety override)

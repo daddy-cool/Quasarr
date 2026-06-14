@@ -63,6 +63,9 @@ class GetLinksStatusNotDownloadableTests(unittest.TestCase):
 
         self.assertIsNone(result["error"])
         self.assertFalse(result["all_finished"])
+        # The not-downloadable link must be queued for cleanup, otherwise it
+        # lingers and keeps the package from ever finishing.
+        self.assertEqual(result["offline_mirror_linkids"], [21])
 
     def test_offline_links_collected_for_cleanup_with_online_mirror(self):
         links = [
