@@ -217,23 +217,68 @@ def main():
 
     # --- CHECK-ONLY MODE (fork-safe) ---
     # Used for pull requests from forks, where the bot cannot push auto-fixes
-    # back to the contributor's branch. Verify formatting and tests only; never
-    # commit, push, or bump the version. Fail loudly if the tree isn't clean so
-    # the contributor knows to run pre-commit.py locally.
+    # back to the contributor's branch. Verify only — never mutate, commit,
+    # push, or bump. Collect every failure into a checklist (written to the
+    # job summary and to pr_check_report.md for the PR-comment workflow), then
+    # exit non-zero if anything failed.
     if is_check:
-        fixed_format = task_format()
-        task_tests()
         if "GITHUB_OUTPUT" in os.environ:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write("changes_pushed=false\n")
-        if fixed_format:
-            print(
-                "\n❌ ::error::Code style is not clean. Run "
-                "`uv run pre-commit.py` locally and commit the result."
+
+        checklist = []  # (passed: bool, label, fix hint)
+
+        print("\n🔍 --- LINT (ruff check) ---")
+        lint = run(["uv", "run", "ruff", "check", "."], check=False)
+        print("\n🎨 --- FORMAT (ruff format --check) ---")
+        fmt = run(["uv", "run", "ruff", "format", "--check", "."], check=False)
+        style_ok = lint.returncode == 0 and fmt.returncode == 0
+        checklist.append(
+            (
+                style_ok,
+                "Lint & formatting (ruff)",
+                "Run `uv run pre-commit.py` locally and commit the result.",
             )
-            sys.exit(1)
-        print("\n✨ Check passed. Code style is clean and tests are green.")
-        sys.exit(0)
+        )
+
+        print("\n🧪 --- TESTS ---")
+        test = run(
+            ["uv", "run", "python", "-m", "unittest", "discover", "-s", "tests"],
+            check=False,
+        )
+        checklist.append(
+            (
+                test.returncode == 0,
+                "Unit tests",
+                "Fix the failing tests (see the workflow log for details).",
+            )
+        )
+
+        all_ok = all(p for p, _, _ in checklist)
+        lines = ["## 🤖 Quasarr PR Checks", ""]
+        if all_ok:
+            lines.append("✅ All checks passed — nothing to fix.")
+        else:
+            lines.append("Some checks failed. Please fix and push again:")
+            lines.append("")
+            for passed, label, hint in checklist:
+                box = "x" if passed else " "
+                lines.append(
+                    f"- [{box}] **{label}**" + ("" if passed else f" — {hint}")
+                )
+        report = "\n".join(lines) + "\n"
+
+        Path("pr_check_report.md").write_text(report, encoding="utf-8")
+        if "GITHUB_STEP_SUMMARY" in os.environ:
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+                f.write(report)
+
+        print("\n" + report)
+        if all_ok:
+            print("✨ Check passed.")
+            sys.exit(0)
+        print("❌ ::error::PR checks failed — see the checklist above.")
+        sys.exit(1)
 
     # Run Tasks
     fixed_format = task_format()

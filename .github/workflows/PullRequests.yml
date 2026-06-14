@@ -61,6 +61,25 @@ jobs:
           fi
           echo "✨ Maintenance complete."
 
+      # Fork PRs only: the read-only token here cannot comment on the PR, so
+      # hand the checklist to the PRCheckFeedback workflow (which runs in the
+      # base-repo context with a write token) via an artifact. always() so the
+      # report is uploaded even when the check above fails.
+      - name: Stage PR check feedback
+        if: always() && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "${{ github.event.pull_request.number }}" > pr_number.txt
+
+      - name: Upload PR check report
+        if: always() && github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-check-report
+          path: |
+            pr_check_report.md
+            pr_number.txt
+          if-no-files-found: ignore
+
   version:
     needs: [ quality-check ]
     if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
