@@ -50,8 +50,7 @@ Develop from a source checkout; `uv tool install quasarr` is for end users only.
 - Simulate Radarr/Sonarr/Lidarr/Magazarr against a running instance: `uv run cli_tester.py` (preferred over standing up a full *arr stack)
 - Unit tests: `uv run python -X utf8 -m unittest discover -s tests`
 - Lint: `uv run ruff check .`
-- Before a PR: `uv run python -X utf8 pre-commit.py` (lint + format + tests + version bump); install the git hook with `uv run pre-commit install`
-- `uv run python -X utf8 pre-commit.py --upgrade` only when intentionally refreshing pinned dependencies
+- Before a PR: `uv run python -X utf8 pre-commit.py` (lint + format + dependency upgrade + tests + version bump); install the git hook with `uv run pre-commit install`. Dependencies are upgraded automatically on every run.
 
 CI enforces the same gate via `uv run pre-commit.py --ci` in `PullRequests.yml`; `Release.yml` runs no lint or test step.
 

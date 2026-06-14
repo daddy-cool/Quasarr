@@ -214,7 +214,6 @@ def task_version_bump():
 def main():
     is_ci = "--ci" in sys.argv
     is_check = "--check" in sys.argv
-    do_upgrade = "--upgrade" in sys.argv or is_ci
 
     # --- CHECK-ONLY MODE (fork-safe) ---
     # Used for pull requests from forks, where the bot cannot push auto-fixes
@@ -238,9 +237,8 @@ def main():
 
     # Run Tasks
     fixed_format = task_format()
-    fixed_deps = False
-    if do_upgrade:
-        fixed_deps = task_upgrade_deps()
+    # Dependencies are always upgraded on every run (no opt-in flag).
+    fixed_deps = task_upgrade_deps()
     task_tests()
 
     fixed_version, new_v = task_version_bump()
