@@ -1053,6 +1053,9 @@ def is_valid_release(
     search_string: str,
     season: int = None,
     episode: int = None,
+    episode_year: int = None,
+    episode_month: int = None,
+    episode_day: int = None,
 ) -> bool:
     """
     Return True if the given release title is valid for the given search parameters.
@@ -1092,24 +1095,41 @@ def is_valid_release(
 
         # if it's a TV show search, don't allow any movies (check for season or episode tags in the title)
         if is_tv_search:
-            # must have some S/E tag present
-            if not SEASON_EP_REGEX.search(title):
-                trace(
-                    "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
-                    title=title,
-                    pattern=SEASON_EP_REGEX.pattern,
-                )
-                return False
-            # if caller specified a season or episode, double‑check the match
-            if season is not None or episode is not None:
-                if not match_in_title(title, season, episode):
+            if episode_year is None:
+                # must have some S/E tag present
+                if not SEASON_EP_REGEX.search(title):
                     trace(
-                        "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                        "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
                         title=title,
-                        season=season,
-                        episode=episode,
+                        pattern=SEASON_EP_REGEX.pattern,
                     )
                     return False
+                # if caller specified a season or episode, double‑check the match
+                if season is not None or episode is not None:
+                    if not match_in_title(title, season, episode):
+                        trace(
+                            "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                            title=title,
+                            season=season,
+                            episode=episode,
+                        )
+                        return False
+
+            else:
+                if (
+                    episode_year not in title
+                    or episode_month not in title
+                    or episode_day not in title
+                ):
+                    trace(
+                        "Skipping {title!r} as it doesn't match date {episode_year}-{episode_month}-{episode_day}",
+                        title=title,
+                        episode_year=episode_year,
+                        episode_month=episode_month,
+                        episode_day=episode_day,
+                    )
+                    return False
+
             return True
 
         # if it's a document search, it should not contain Movie or TV show tags

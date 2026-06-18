@@ -53,6 +53,7 @@ class Source(AbstractSearchSource):
         SEARCH_CAT_BOOKS,
     ]
     requires_login = True
+    supports_date_numbering = True
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
@@ -188,6 +189,9 @@ class Source(AbstractSearchSource):
         search_category,
         season,
         episode,
+        episode_year,
+        episode_month,
+        episode_day,
     ):
         """
         Search a single page. This method is called sequentially for each page.
@@ -282,6 +286,9 @@ class Source(AbstractSearchSource):
                         search_string,
                         season,
                         episode,
+                        episode_year,
+                        episode_month,
+                        episode_day,
                     ):
                         continue
 
@@ -353,6 +360,9 @@ class Source(AbstractSearchSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
+        episode_year: int = None,
+        episode_month: int = None,
+        episode_day: int = None,
     ) -> list[SearchRelease]:
         """
         Search with sequential pagination to find best quality releases.
@@ -368,9 +378,13 @@ class Source(AbstractSearchSource):
                 info(f"no title for IMDb {imdb_id}")
                 return releases
             search_string = title
-            if not season:
-                if year := get_year(imdb_id):
-                    search_string += f" {year}"
+
+            if not episode_year:
+                if not season:
+                    if year := get_year(imdb_id):
+                        search_string += f" {year}"
+            else:
+                search_string += f" {episode_year} {episode_month} {episode_day}"
 
         search_string = unescape(search_string)
         max_search_duration = 7
@@ -404,6 +418,9 @@ class Source(AbstractSearchSource):
                     search_category,
                     season,
                     episode,
+                    episode_year,
+                    episode_month,
+                    episode_day,
                 )
 
                 page_release_titles = tuple(
