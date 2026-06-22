@@ -48,15 +48,15 @@ FEED_LIBRARY_LIMIT = 50
 
 class Source(AbstractSearchSource):
     initials = "mx"
+    language = "fr"
     supports_imdb = True
     supports_phrase = False
     supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]
-    # Feed-only dependencies: the movie feed reads Radarr and the show feed
-    # reads Sonarr (ID search needs neither). The setup wizard prompts for them
-    # via these flags; either is skippable, and feed() degrades gracefully with
-    # a warning when its category's client is missing.
-    feed_requires_radarr = True
-    feed_requires_sonarr = True
+    # The movie feed reads Radarr and the show feed reads Sonarr (ID search
+    # needs neither). Setup prompts remain source-wide, but feed() degrades
+    # gracefully when only the unrelated client is missing.
+    requires_radarr = True
+    requires_sonarr = True
 
     # ------------------------------------------------------------------ #
     #  HTTP                                                               #

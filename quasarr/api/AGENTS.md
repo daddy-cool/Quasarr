@@ -22,7 +22,7 @@ Submodules are packages with all code in their `__init__.py`: `arr/` (emulation 
 
 ## Work Guidance
 
-- JSON config endpoints return `{success: bool, message: str}`; frontend JS calls protected `/api` endpoints through the global `quasarrApiFetch` helper injected by `html_templates`.
+- JSON config endpoints return `{success: bool, message: str}` unless they are read endpoints with richer payloads; frontend JS calls protected `/api` endpoints through the global `quasarrApiFetch` helper injected by `html_templates`.
 - HTML is built with f-strings (double `{{ }}` for literal CSS/JS braces) via `providers.html_templates` and `providers.html_images`; follow the brace style of the file being edited.
 - `/api/packages/content` intentionally returns an HTML fragment (not JSON) despite requiring the API key.
 - The dashboard hostname-status pill replicates logic from `storage/setup`; changes there must stay in sync.

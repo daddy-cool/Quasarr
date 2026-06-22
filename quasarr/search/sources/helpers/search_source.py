@@ -12,6 +12,12 @@ class AbstractSearchSource(ABC):
 
     @property
     @abstractmethod
+    def language(self) -> str:
+        """Two-letter content language of the source ("de", "en", "fr")."""
+        pass
+
+    @property
+    @abstractmethod
     def supports_imdb(self) -> bool:
         pass
 
@@ -34,11 +40,26 @@ class AbstractSearchSource(ABC):
         return False
 
     @property
-    def feed_requires_radarr(self) -> bool:
+    def requires_account(self) -> bool:
+        """The source needs a registered user account to be usable."""
         return False
 
     @property
-    def feed_requires_sonarr(self) -> bool:
+    def invite_only(self) -> bool:
+        """Account creation requires an invitation (no open registration)."""
+        return False
+
+    @property
+    def requires_flaresolverr(self) -> bool:
+        """The source needs FlareSolverr to be usable."""
+        return False
+
+    @property
+    def requires_radarr(self) -> bool:
+        return False
+
+    @property
+    def requires_sonarr(self) -> bool:
         return False
 
     @abstractmethod
